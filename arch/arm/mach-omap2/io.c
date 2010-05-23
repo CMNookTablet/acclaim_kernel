@@ -32,7 +32,6 @@
 #include <plat/sdrc.h>
 #include <plat/gpmc.h>
 #include <plat/serial.h>
-#include <plat/vram.h>
 
 #include "clock2xxx.h"
 #include "clock3xxx.h"
@@ -258,7 +257,6 @@ static void __init _omap2_map_common_io(void)
 
 	omap2_check_revision();
 	omap_sram_init();
-	omapfb_reserve_sdram();
 	omap_vram_reserve_sdram();
 	dspbridge_reserve_sdram();
 
