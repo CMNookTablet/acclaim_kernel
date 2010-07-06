@@ -16,7 +16,9 @@
 #include <linux/init.h>
 #include <linux/mm.h>
 
-#define MAX_MEMBLOCK_REGIONS 128
+#include <asm/memblock.h>
+
+#define INIT_MEMBLOCK_REGIONS 128
 
 struct memblock_region {
 	phys_addr_t base;
@@ -24,8 +26,9 @@ struct memblock_region {
 };
 
 struct memblock_type {
-	unsigned long cnt;
-	struct memblock_region regions[MAX_MEMBLOCK_REGIONS+1];
+	unsigned long cnt;	/* number of regions */
+	unsigned long max;	/* size of the allocated array */
+	struct memblock_region *regions;
 };
 
 struct memblock {
