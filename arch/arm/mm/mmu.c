@@ -11,9 +11,9 @@
 #include <linux/kernel.h>
 #include <linux/errno.h>
 #include <linux/init.h>
-#include <linux/bootmem.h>
 #include <linux/mman.h>
 #include <linux/nodemask.h>
+#include <linux/memblock.h>
 #include <linux/sort.h>
 #include <linux/fs.h>
 
@@ -516,7 +516,9 @@ EXPORT_SYMBOL(phys_mem_access_prot);
 
 static void __init *early_alloc(unsigned long sz)
 {
-	return alloc_bootmem_low_pages(sz);
+	void *ptr = __va(memblock_alloc(sz, sz));
+	memset(ptr, 0, sz);
+	return ptr;
 }
 
 static void __init alloc_init_pte(pmd_t *pmd, unsigned long addr,
@@ -728,10 +730,13 @@ static int __init early_vmalloc(char *arg)
 early_param("vmalloc", early_vmalloc);
 
 #define VMALLOC_MIN	(void *)(VMALLOC_END - vmalloc_reserve)
+phys_addr_t lowmem_end_addr;
 
 static void __init sanity_check_meminfo(void)
 {
 	int i, j, highmem = 0;
+
+	lowmem_end_addr = __pa(vmalloc_min - 1) + 1;
 
 	for (i = 0, j = 0; i < meminfo.nr_banks; i++) {
 		struct membank *bank = &meminfo.bank[j];
@@ -858,34 +863,22 @@ static inline void prepare_page_table(void)
 }
 
 /*
- * Reserve the various regions
+ * Reserve the special regions of memory
  */
-void __init reserve_special_regions(void)
+void __init arm_mm_memblock_reserve(void)
 {
-	/*
-	 * Register the kernel text and data with bootmem.
-	 * Note that this can only be in node 0.
-	 */
-#ifdef CONFIG_XIP_KERNEL
-	reserve_bootmem(__pa(_data), _end - _data, BOOTMEM_DEFAULT);
-#else
-	reserve_bootmem(__pa(_stext), _end - _stext, BOOTMEM_DEFAULT);
-#endif
-
 	/*
 	 * Reserve the page tables.  These are already in use,
 	 * and can only be in node 0.
 	 */
-	reserve_bootmem(__pa(swapper_pg_dir),
-			PTRS_PER_PGD * sizeof(pgd_t), BOOTMEM_DEFAULT);
+	memblock_reserve(__pa(swapper_pg_dir), PTRS_PER_PGD * sizeof(pgd_t));
 
 #ifdef CONFIG_SA1111
 	/*
 	 * Because of the SA1111 DMA bug, we want to preserve our
 	 * precious DMA-able memory...
 	 */
-	reserve_bootmem(PHYS_OFFSET, __pa(swapper_pg_dir) - PHYS_OFFSET,
-			BOOTMEM_DEFAULT);
+	memblock_reserve(PHYS_OFFSET, __pa(swapper_pg_dir) - PHYS_OFFSET);
 #endif
 }
 
@@ -904,7 +897,7 @@ static void __init devicemaps_init(struct machine_desc *mdesc)
 	/*
 	 * Allocate the vector page early.
 	 */
-	vectors = early_alloc(PAGE_SIZE);
+	vectors_page = early_alloc(PAGE_SIZE);
 
 	for (addr = VMALLOC_END; addr; addr += PGDIR_SIZE)
 		pmd_clear(pmd_off_k(addr));
@@ -1030,7 +1023,6 @@ void __init paging_init(struct machine_desc *mdesc)
 	sanity_check_meminfo();
 	prepare_page_table();
 	map_lowmem();
-	bootmem_init(mdesc);
 	devicemaps_init(mdesc);
 	kmap_init();
 
@@ -1038,6 +1030,9 @@ void __init paging_init(struct machine_desc *mdesc)
 
 	/* allocate the zero page. */
 	zero_page = early_alloc(PAGE_SIZE);
+
+	bootmem_init(mdesc);
+
 	empty_zero_page = virt_to_page(zero_page);
 	__flush_dcache_page(NULL, empty_zero_page);
 }

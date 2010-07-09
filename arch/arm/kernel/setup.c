@@ -25,6 +25,7 @@
 #include <linux/smp.h>
 #include <linux/fs.h>
 #include <linux/proc_fs.h>
+#include <linux/memblock.h>
 #include <linux/gpio.h>
 
 #include <asm/unified.h>
@@ -740,6 +741,8 @@ void __init setup_arch(char **cmdline_p)
 	*cmdline_p = cmd_line;
 
 	parse_early_param();
+
+	arm_memblock_init(&meminfo);
 
 	paging_init(mdesc);
 	request_standard_resources(&meminfo, mdesc);
