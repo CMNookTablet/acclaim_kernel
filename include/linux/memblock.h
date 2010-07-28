@@ -146,6 +146,16 @@ static inline unsigned long memblock_region_reserved_end_pfn(const struct memblo
 	     region++)
 
 
+#ifdef ARCH_DISCARD_MEMBLOCK
+#define __init_memblock __init
+#define __initdata_memblock __initdata
+#else
+#define __init_memblock
+#define __initdata_memblock
+#endif
+
+#endif /* CONFIG_HAVE_MEMBLOCK */
+
 #endif /* __KERNEL__ */
 
 #endif /* _LINUX_MEMBLOCK_H */
