@@ -29,6 +29,7 @@
 #include <linux/console.h>
 #include <linux/pci.h>
 #include <linux/gfp.h>
+#include <linux/memblock.h>
 
 #include <xen/xen.h>
 #include <xen/interface/xen.h>
@@ -1151,6 +1152,8 @@ asmlinkage void __init xen_start_kernel(void)
 
 	local_irq_disable();
 	early_boot_irqs_off();
+
+	memblock_init();
 
 	xen_raw_console_write("mapping kernel into physical memory\n");
 	pgd = xen_setup_kernel_pagetable(pgd, xen_start_info->nr_pages);
