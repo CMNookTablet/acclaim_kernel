@@ -25,7 +25,7 @@
 #include <linux/smp.h>
 #include <linux/fs.h>
 #include <linux/proc_fs.h>
-#include <linux/memblock.h>
+#include <asm/memblock.h>
 #include <linux/gpio.h>
 
 #include <asm/unified.h>
