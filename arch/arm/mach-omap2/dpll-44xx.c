@@ -14,7 +14,7 @@
 #include <linux/io.h>
 #include <linux/delay.h>
 #include <linux/clk.h>
-#include <linux/cpufreq.h>
+#include <linux/slab.h>
 
 #include <plat/common.h>
 #include <plat/clockdomain.h>
@@ -40,7 +40,8 @@
 
 static struct delayed_work	lpmode_work;
 
-bool omap4_lpmode = false;
+bool in_dpll_cascading = false;
+DEFINE_RWLOCK(dpll_cascading_lock);
 
 static struct clockdomain *l3_emif_clkdm;
 static struct clk *dpll_core_m2_ck, *dpll_core_m5x2_ck;
@@ -66,11 +67,14 @@ static struct dpll_cascade_saved_state {
 	unsigned long dpll_core_ck_rate;
 	u32 dpll_core_m2_div;
 	struct clk *per_hsd_byp_clk_mux_ck_parent;
-	unsigned int cpufreq_policy_min_rate;
-	unsigned int cpufreq_policy_max_rate;
-	unsigned int cpufreq_policy_cur_rate;
-	struct omap_opp *mpu_opp;
 } state;
+
+struct dpll_cascading_blocker {
+	struct device *dev;
+	struct list_head node;
+};
+
+LIST_HEAD(dpll_cascading_blocker_list);
 
 /**
  * omap4_core_dpll_m2_set_rate - set CORE DPLL M2 divider
@@ -533,6 +537,90 @@ int omap4_dpll_low_power_cascade_check_entry()
 	return schedule_delayed_work_on(0, &lpmode_work, delay);
 }
 
+int dpll_cascading_blocker_hold(struct device *dev)
+{
+	struct dpll_cascading_blocker *blocker;
+	unsigned long flags;
+	int list_was_empty = 0;
+	int ret = 0;
+
+	write_lock_irqsave(&dpll_cascading_lock, flags);
+
+	if (list_empty(&dpll_cascading_blocker_list))
+		list_was_empty = 1;
+
+	/* bail early if constraint for this device already exists */
+	list_for_each_entry(blocker, &dpll_cascading_blocker_list, node) {
+		if (blocker->dev == dev)
+			goto out;
+	}
+
+	/* add new member to list of devices blocking dpll cascading entry */
+	blocker = kzalloc(sizeof(struct dpll_cascading_blocker), GFP_KERNEL);
+	if (!blocker) {
+		pr_err("%s: Unable to creat a new blocker\n",
+				__func__);
+		ret = -ENOMEM;
+		goto out;
+	}
+	blocker->dev = dev;
+
+	list_add(&blocker->node, &dpll_cascading_blocker_list);
+
+	if (list_was_empty && in_dpll_cascading) {
+		omap4_dpll_low_power_cascade_exit();
+		in_dpll_cascading = false;
+	}
+
+out:
+	write_unlock_irqrestore(&dpll_cascading_lock, flags);
+
+	return ret;
+}
+EXPORT_SYMBOL(dpll_cascading_blocker_hold);
+
+int dpll_cascading_blocker_release(struct device *dev)
+{
+	struct dpll_cascading_blocker *blocker;
+	unsigned long flags;
+	int ret = 0;
+	int found = 0;
+
+	write_lock_irqsave(&dpll_cascading_lock, flags);
+
+	/* bail early if list is empty */
+	if (list_empty(&dpll_cascading_blocker_list))
+		goto out;
+
+	/* find the list entry that matches the device */
+	list_for_each_entry(blocker, &dpll_cascading_blocker_list, node) {
+		if (blocker->dev == dev) {
+			found = 1;
+			break;
+		}
+	}
+
+	/* bail if constraint for this device does not exist */
+	if (!found) {
+		ret = -EINVAL;
+		goto out;
+	}
+
+	list_del(&blocker->node);
+
+	if (list_empty(&dpll_cascading_blocker_list)
+			&& !in_dpll_cascading) {
+		in_dpll_cascading = true;
+		omap4_dpll_low_power_cascade_enter();
+	}
+
+out:
+	write_unlock_irqrestore(&dpll_cascading_lock, flags);
+
+	return ret;
+}
+EXPORT_SYMBOL(dpll_cascading_blocker_release);
+
 /**
  * omap4_dpll_low_power_cascade - configure system for low power DPLL cascade
  *
@@ -562,9 +650,6 @@ int omap4_dpll_low_power_cascade_enter()
 	struct clk *l4_wkup_clk_mux_ck, *lp_clk_div_ck;
 	struct clk *pmd_stm_clock_mux_ck, *pmd_trace_clk_mux_ck;
 	struct clockdomain *emu_sys_44xx_clkdm, *abe_44xx_clkdm;
-	struct device *mpu_dev;
-	struct cpufreq_policy *cp;
-	struct omap_opp *opp;
 	struct voltagedomain *vdd_mpu, *vdd_iva, *vdd_core;
 
 	dpll_abe_ck = clk_get(NULL, "dpll_abe_ck");
@@ -608,8 +693,6 @@ int omap4_dpll_low_power_cascade_enter()
 		ret = -ENODEV;
 		goto out;
 	}
-
-	omap4_lpmode = true;
 
 	/* look up the three scalable voltage domains */
 	vdd_mpu = omap_voltage_domain_get("mpu");
@@ -785,7 +868,6 @@ dpll_iva_bypass_fail:
 				(1 << state.div_iva_hs_clk_div)));
 	clk_set_rate(dpll_iva_ck, state.dpll_iva_ck_rate);
 dpll_mpu_bypass_fail:
-	omap4_lpmode = false;
 	clk_set_rate(div_mpu_hs_clk, (div_mpu_hs_clk->parent->rate /
 				(1 << state.div_mpu_hs_clk_div)));
 	clk_set_rate(dpll_mpu_ck, state.dpll_mpu_ck_rate);
@@ -828,7 +910,6 @@ int omap4_dpll_low_power_cascade_exit()
 	struct clk *l4_wkup_clk_mux_ck, *lp_clk_div_ck;
 	struct clk *pmd_stm_clock_mux_ck, *pmd_trace_clk_mux_ck;
 	struct clockdomain *emu_sys_44xx_clkdm, *abe_44xx_clkdm;
-	struct cpufreq_policy *cp;
 	struct voltagedomain *vdd_mpu, *vdd_iva, *vdd_core;
 
 	sys_clkin_ck = clk_get(NULL, "sys_clkin_ck");
@@ -876,9 +957,6 @@ int omap4_dpll_low_power_cascade_exit()
 
 	if (delayed_work_pending(&lpmode_work))
 		cancel_delayed_work_sync(&lpmode_work);
-
-	if (!omap4_lpmode)
-		return 0;
 
 	/* look up the three scalable voltage domains */
 	vdd_mpu = omap_voltage_domain_get("mpu");
@@ -979,8 +1057,6 @@ int omap4_dpll_low_power_cascade_exit()
 	omap_smartreflex_enable(vdd_core);
 
 	recalculate_root_clocks();
-
-	omap4_lpmode = false;
 
 out:
 	return ret;

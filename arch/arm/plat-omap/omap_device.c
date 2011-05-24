@@ -880,7 +880,7 @@ int omap_device_set_rate(struct device *req_dev, struct device *dev,
 			unsigned long rate)
 {
 	struct omap_opp *opp;
-	unsigned long volt, freq, min_freq, max_freq;
+	unsigned long volt, freq, min_freq, max_freq, flags;
 	struct voltagedomain *voltdm;
 	struct platform_device *pdev;
 	struct omap_device *od;
@@ -889,11 +889,15 @@ int omap_device_set_rate(struct device *req_dev, struct device *dev,
 	pdev = container_of(dev, struct platform_device, dev);
 	od = _find_by_pdev(pdev);
 
-#ifdef CONFIG_ARCH_OMAP4
 	/* if in low power DPLL cascading mode, bail out early */
-	if (omap4_lpmode)
-		return -EINVAL;
-#endif
+	if (cpu_is_omap44xx()) {
+		read_lock_irqsave(&dpll_cascading_lock, flags);
+
+		if (in_dpll_cascading) {
+			ret = -EINVAL;
+			goto out;
+		}
+	}
 
 	/*
 	 * Figure out if the desired frquency lies between the
@@ -902,13 +906,15 @@ int omap_device_set_rate(struct device *req_dev, struct device *dev,
 	min_freq = 0;
 	if (IS_ERR(opp_find_freq_ceil(dev, &min_freq))) {
 		dev_err(dev, "%s: Unable to find lowest opp\n", __func__);
-		return -ENODEV;
+		ret = -ENODEV;
+		goto out;
 	}
 
 	max_freq = ULONG_MAX;
 	if (IS_ERR(opp_find_freq_floor(dev, &max_freq))) {
 		dev_err(dev, "%s: Unable to find highest opp\n", __func__);
-		return -ENODEV;
+		ret = -ENODEV;
+		goto out;
 	}
 
 	if (rate < min_freq)
@@ -923,7 +929,8 @@ int omap_device_set_rate(struct device *req_dev, struct device *dev,
 	if (IS_ERR(opp)) {
 		dev_dbg(dev, "%s: Unable to find OPP for freq%ld\n",
 			__func__, rate);
-		return -ENODEV;
+		ret = -ENODEV;
+		goto out;
 	}
 	if (unlikely(freq != rate))
 		dev_dbg(dev, "%s: Available freq %ld != dpll freq %ld.\n",
@@ -941,11 +948,16 @@ int omap_device_set_rate(struct device *req_dev, struct device *dev,
 	if (ret) {
 		dev_err(dev, "%s: Unable to get the final volt for scaling\n",
 			__func__);
-		return ret;
+		goto out;
 	}
 
 	/* Do the actual scaling */
-	return omap_voltage_scale(voltdm);
+	ret =  omap_voltage_scale(voltdm);
+out:
+	if (cpu_is_omap44xx())
+		read_unlock_irqrestore(&dpll_cascading_lock, flags);
+
+	return ret;
 }
 EXPORT_SYMBOL(omap_device_set_rate);
 

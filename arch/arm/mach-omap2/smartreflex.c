@@ -238,7 +238,7 @@ static void sr_set_clk_length(struct omap_sr *sr)
 		clk_put(sys_ck);
 	} else {
 		/* SR_xxx_SYSCLK runs at 12.288MHz in DPLL cascading */
-		if (omap4_lpmode)
+		if (in_dpll_cascading)
 			sys_clk_speed = 12288000;
 		else {
 			sys_ck = clk_get(NULL, "sys_clkin_ck");
