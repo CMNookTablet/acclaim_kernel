@@ -16,6 +16,7 @@
 #include <linux/err.h>
 
 #include <mach/irqs.h>
+#include <plat/iommu.h>
 #include <plat/omap_hwmod.h>
 #include <plat/omap_device.h>
 #include <plat/omap-pm.h>
@@ -41,6 +42,132 @@ static char *hwmod_state_strings[] = {
 	"_HWMOD_STATE_IDLE",
 	"_HWMOD_STATE_DISABLED",
 };
+
+/* FIXME: not in use now
+ * static struct omap_ipupm_mod_ops omap_ipu_ops = {
+ *	.start = NULL,
+ *	.stop = NULL,
+ * };
+ *
+ * static struct omap_ipupm_mod_ops omap_ipu0_ops = {
+ *	.start = NULL,
+ *	.stop = NULL,
+ * };
+ *
+ * static struct omap_ipupm_mod_ops omap_ipu1_ops = {
+ *	.start = NULL,
+ *	.stop = NULL,
+ * };
+ */
+
+/* ipupm generic operations */
+static struct omap_ipupm_mod_ops omap_ipupm_ops = {
+	.start = NULL,
+	.stop = NULL,
+};
+
+static struct omap_ipupm_mod_platform_data omap_ipupm_data[] = {
+	{
+		.name = "omap-ipu-pm",
+		.oh_name = "fdif",
+		.caps = IPUPM_CAPS_START | IPUPM_CAPS_STOP
+			| IPUPM_CAPS_PERF | IPUPM_CAPS_LAT,
+		.ops = &omap_ipupm_ops,
+	},
+	{
+		.name = "omap-ipu-pm",
+		.oh_name = "ipu",
+		.caps = IPUPM_CAPS_START | IPUPM_CAPS_STOP
+			| IPUPM_CAPS_PERF | IPUPM_CAPS_LAT
+			| IPUPM_CAPS_EXTINIT,
+		.ops = &omap_ipupm_ops,
+		.get_dev = omap_iommu_get_dev,
+	},
+	{
+		.name = "omap-ipu-pm",
+		.oh_name = "ipu_c0",
+		.caps = IPUPM_CAPS_START | IPUPM_CAPS_STOP
+			| IPUPM_CAPS_EXTINIT,
+		.ops = &omap_ipupm_ops,
+	},
+	{
+		.name = "omap-ipu-pm",
+		.oh_name = "ipu_c1",
+		.caps = IPUPM_CAPS_START | IPUPM_CAPS_STOP
+			| IPUPM_CAPS_EXTINIT,
+		.ops = &omap_ipupm_ops,
+	},
+	{
+		.name = "omap-ipu-pm",
+		.oh_name = "iss",
+		.caps = IPUPM_CAPS_START | IPUPM_CAPS_STOP
+			| IPUPM_CAPS_PERF | IPUPM_CAPS_LAT,
+		.ops = &omap_ipupm_ops,
+	},
+	{
+		.name = "omap-ipu-pm",
+		.oh_name = "iva",
+		.caps = IPUPM_CAPS_START | IPUPM_CAPS_STOP
+			| IPUPM_CAPS_PERF | IPUPM_CAPS_LAT,
+		.ops = &omap_ipupm_ops,
+	},
+	{
+		.name = "omap-ipu-pm",
+		.oh_name = "iva_seq0",
+		.caps = IPUPM_CAPS_START | IPUPM_CAPS_STOP,
+		.ops = &omap_ipupm_ops,
+	},
+	{
+		.name = "omap-ipu-pm",
+		.oh_name = "iva_seq1",
+		.caps = IPUPM_CAPS_START | IPUPM_CAPS_STOP,
+		.ops = &omap_ipupm_ops,
+	},
+	{
+		.name = "omap-ipu-pm",
+		.oh_name = "l3_main_1",
+		.caps = IPUPM_CAPS_LAT | IPUPM_CAPS_BDW
+			| IPUPM_CAPS_EXTINIT,
+		.ops = &omap_ipupm_ops,
+	},
+	{
+		.name = "omap-ipu-pm",
+		.oh_name = "mpu",
+		.caps = IPUPM_CAPS_PERF | IPUPM_CAPS_LAT
+			| IPUPM_CAPS_EXTINIT,
+		.ops = &omap_ipupm_ops,
+	},
+	{
+		.name = "omap-ipu-pm",
+		.oh_name = "sl2if",
+		.caps = IPUPM_CAPS_START | IPUPM_CAPS_STOP,
+		.ops = &omap_ipupm_ops,
+	},
+	{
+		.name = "omap-ipu-pm",
+		.oh_name = "dsp",
+		.caps = IPUPM_CAPS_START | IPUPM_CAPS_STOP
+			| IPUPM_CAPS_PERF | IPUPM_CAPS_LAT
+			| IPUPM_CAPS_EXTINIT,
+		.ops = &omap_ipupm_ops,
+		.get_dev = omap_iommu_get_dev,
+	},
+};
+
+struct omap_ipupm_mod_platform_data *ipupm_get_plat_data(void)
+{
+	return omap_ipupm_data;
+}
+EXPORT_SYMBOL(ipupm_get_plat_data);
+
+static struct omap_device_pm_latency omap_ipupm_latency[] = {
+	{
+		.deactivate_func = omap_device_idle_hwmods,
+		.activate_func	 = omap_device_enable_hwmods,
+		.flags		 = OMAP_DEVICE_LATENCY_AUTO_ADJUST,
+	},
+};
+
 static void print_hwmod_state(struct omap_hwmod *oh, char *desc)
 {
 	u32 _state = (u32) oh->_state;
@@ -94,7 +221,18 @@ inline int ipu_pm_module_set_rate(unsigned rsrc,
 	struct device *dp;
 	struct omap_ipupm_mod_platform_data *pd;
 
+	if (rsrc >= ARRAY_SIZE(omap_ipupm_data)) {
+		ret = -EINVAL;
+		pr_err("%s invalid rsrc device index\n", __func__);
+		goto err_ret;
+	}
+
 	pd = ipupm_get_plat_data();
+	if (!pd) {
+		ret = -EINVAL;
+		pr_err("%s NULL pd pointer\n", __func__);
+		goto err_ret;
+	}
 
 	if (target_rsrc == IPU_PM_MPU)
 		dp = omap2_get_mpuss_device();
@@ -106,18 +244,32 @@ inline int ipu_pm_module_set_rate(unsigned rsrc,
 		else
 			target = target_rsrc;
 
+		if (target >= ARRAY_SIZE(omap_ipupm_data)) {
+			ret = -EINVAL;
+			pr_err("%s invalid target device index\n", __func__);
+			goto err_ret;
+		}
 		if ((pd[target].caps & IPUPM_CAPS_PERF) == 0) {
-			pr_err("device set rate not supported for %s",
+			pr_err("device set rate not supported for %s\n",
 				pd[target].oh_name);
 			ret = -EINVAL;
 			goto err_ret;
 		} else
 			dp = pd[target].dev;
 	}
-
+	if (!pd[rsrc].dev) {
+		ret = -EINVAL;
+		pr_err("%s NULL requesting device\n", __func__);
+		goto err_ret;
+	}
+	if (!dp) {
+		ret = -EINVAL;
+		pr_err("%s NULL target device\n", __func__);
+		goto err_ret;
+	}
 	ret = omap_device_set_rate(pd[rsrc].dev, dp, rate);
 	if (ret)
-		pr_err("device set rate failed %s", pd[target_rsrc].oh_name);
+		pr_err("device set rate failed %s\n", pd[target_rsrc].oh_name);
 err_ret:
 	return ret;
 }
@@ -203,129 +355,6 @@ inline int ipu_pm_module_set_bandwidth(unsigned rsrc,
 }
 EXPORT_SYMBOL(ipu_pm_module_set_bandwidth);
 
-/* FIXME: not in use now
- * static struct omap_ipupm_mod_ops omap_ipu_ops = {
- *	.start = NULL,
- *	.stop = NULL,
- * };
- *
- * static struct omap_ipupm_mod_ops omap_ipu0_ops = {
- *	.start = NULL,
- *	.stop = NULL,
- * };
- *
- * static struct omap_ipupm_mod_ops omap_ipu1_ops = {
- *	.start = NULL,
- *	.stop = NULL,
- * };
- */
-
-/* ipupm generic operations */
-static struct omap_ipupm_mod_ops omap_ipupm_ops = {
-	.start = NULL,
-	.stop = NULL,
-};
-
-static struct omap_ipupm_mod_platform_data omap_ipupm_data[] = {
-	{
-		.name = "omap-ipu-pm",
-		.oh_name = "fdif",
-		.caps = IPUPM_CAPS_START | IPUPM_CAPS_STOP
-			| IPUPM_CAPS_PERF | IPUPM_CAPS_LAT,
-		.ops = &omap_ipupm_ops,
-	},
-	{
-		.name = "omap-ipu-pm",
-		.oh_name = "ipu",
-		.caps = IPUPM_CAPS_START | IPUPM_CAPS_STOP
-			| IPUPM_CAPS_PERF | IPUPM_CAPS_LAT
-			| IPUPM_CAPS_EXTINIT,
-		.ops = &omap_ipupm_ops,
-	},
-	{
-		.name = "omap-ipu-pm",
-		.oh_name = "ipu_c0",
-		.caps = IPUPM_CAPS_START | IPUPM_CAPS_STOP
-			| IPUPM_CAPS_EXTINIT,
-		.ops = &omap_ipupm_ops,
-	},
-	{
-		.name = "omap-ipu-pm",
-		.oh_name = "ipu_c1",
-		.caps = IPUPM_CAPS_START | IPUPM_CAPS_STOP
-			| IPUPM_CAPS_EXTINIT,
-		.ops = &omap_ipupm_ops,
-	},
-	{
-		.name = "omap-ipu-pm",
-		.oh_name = "iss",
-		.caps = IPUPM_CAPS_START | IPUPM_CAPS_STOP
-			| IPUPM_CAPS_PERF | IPUPM_CAPS_LAT,
-		.ops = &omap_ipupm_ops,
-	},
-	{
-		.name = "omap-ipu-pm",
-		.oh_name = "iva",
-		.caps = IPUPM_CAPS_START | IPUPM_CAPS_STOP
-			| IPUPM_CAPS_PERF | IPUPM_CAPS_LAT,
-		.ops = &omap_ipupm_ops,
-	},
-	{
-		.name = "omap-ipu-pm",
-		.oh_name = "iva_seq0",
-		.caps = IPUPM_CAPS_START | IPUPM_CAPS_STOP,
-		.ops = &omap_ipupm_ops,
-	},
-	{
-		.name = "omap-ipu-pm",
-		.oh_name = "iva_seq1",
-		.caps = IPUPM_CAPS_START | IPUPM_CAPS_STOP,
-		.ops = &omap_ipupm_ops,
-	},
-	{
-		.name = "omap-ipu-pm",
-		.oh_name = "l3_main_1",
-		.caps = IPUPM_CAPS_LAT | IPUPM_CAPS_BDW
-			| IPUPM_CAPS_EXTINIT,
-		.ops = &omap_ipupm_ops,
-	},
-	{
-		.name = "omap-ipu-pm",
-		.oh_name = "mpu",
-		.caps = IPUPM_CAPS_PERF | IPUPM_CAPS_LAT
-			| IPUPM_CAPS_EXTINIT,
-		.ops = &omap_ipupm_ops,
-	},
-	{
-		.name = "omap-ipu-pm",
-		.oh_name = "sl2if",
-		.caps = IPUPM_CAPS_START | IPUPM_CAPS_STOP,
-		.ops = &omap_ipupm_ops,
-	},
-	{
-		.name = "omap-ipu-pm",
-		.oh_name = "dsp",
-		.caps = IPUPM_CAPS_START | IPUPM_CAPS_STOP
-			| IPUPM_CAPS_PERF | IPUPM_CAPS_LAT
-			| IPUPM_CAPS_EXTINIT,
-		.ops = &omap_ipupm_ops,
-	},
-};
-
-struct omap_ipupm_mod_platform_data *ipupm_get_plat_data(void)
-{
-	return omap_ipupm_data;
-}
-EXPORT_SYMBOL(ipupm_get_plat_data);
-
-static struct omap_device_pm_latency omap_ipupm_latency[] = {
-	{
-		.deactivate_func = omap_device_idle_hwmods,
-		.activate_func	 = omap_device_enable_hwmods,
-		.flags		 = OMAP_DEVICE_LATENCY_AUTO_ADJUST,
-	},
-};
-
 static int __init omap_ipussdev_init(void)
 {
 	int status = -ENODEV;
@@ -341,8 +370,14 @@ static int __init omap_ipussdev_init(void)
 	for (i = 0; i < ARRAY_SIZE(omap_ipupm_data); i++) {
 		oh_name = omap_ipupm_data[i].oh_name;
 
-		if (omap_ipupm_data[i].caps & IPUPM_CAPS_EXTINIT)
+		if (omap_ipupm_data[i].caps & IPUPM_CAPS_EXTINIT) {
+			if (omap_ipupm_data[i].get_dev) {
+				omap_ipupm_data[i].dev =
+					omap_ipupm_data[i].get_dev(
+						omap_ipupm_data[i].oh_name);
+			}
 			continue;
+		}
 
 		oh = omap_hwmod_lookup(oh_name);
 		if (!oh) {

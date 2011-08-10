@@ -75,6 +75,7 @@ struct omap_ipupm_mod_platform_data {
 	u32 caps;
 	struct pm_qos_request_list *qos_request;
 	struct omap_ipupm_mod_ops *ops;
+	struct device *(*get_dev)(char *);
 };
 
 struct omap_ipupm_mod {
