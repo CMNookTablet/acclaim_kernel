@@ -95,6 +95,7 @@ extern dma_addr_t omap4_secure_ram_phys;
 extern void *so_ram_address;
 
 extern bool in_dpll_cascading;
+extern bool abe_can_enter_dpll_cascading;
 extern rwlock_t dpll_cascading_lock;
 
 extern void __init gic_init_irq(void);

@@ -101,6 +101,8 @@
 
 #define ABE_ROUTES_UL		14
 
+bool abe_can_enter_dpll_cascading;	/* initialized to false by gcc */
+
 /* TODO: fine tune for ping pong - buffer is 2 periods of 12k each*/
 static const struct snd_pcm_hardware omap_abe_hardware = {
 	.info			= SNDRV_PCM_INFO_MMAP |
@@ -2370,7 +2372,8 @@ static int __devinit abe_engine_probe(struct platform_device *pdev)
 
 	abe->abe_pdata = pdata;
 	abe->pdev = pdev;
-
+	dpll_cascading_blocker_hold(&abe->pdev->dev);
+	abe_can_enter_dpll_cascading = true;
 	mutex_init(&abe->mutex);
 	mutex_init(&abe->opp_mutex);
 
