@@ -307,6 +307,7 @@ int dsscomp_set_mgr(dsscomp_t comp, struct dss2_mgr_info *mgr)
 	BUG_ON(mgr->ix != comp->frm.mgr.ix);
 
 	comp->frm.mgr = *mgr;
+	printk ("dsscomp_set_mgr sets mode already?: %x\n", comp->frm.mode);
 
 	mutex_unlock(&mtx);
 
@@ -338,6 +339,7 @@ int dsscomp_setup(dsscomp_t comp, enum dsscomp_setup_mode mode,
 
 	BUG_ON(comp->state != DSSCOMP_STATE_ACTIVE);
 
+	printk ("dsscomp_setup: %x\n", mode);
 	comp->frm.mode = mode;
 	comp->frm.win = win;
 
@@ -701,8 +703,9 @@ void seq_print_comp(struct seq_file *s, dsscomp_t c)
 		   c->state == DSSCOMP_STATE_PROGRAMMED ? "PROGRAMMED" :
 		   c->state == DSSCOMP_STATE_DISPLAYED ? "DISPLAYED" :
 		   "???");
-	seq_printf(s, "    sync_id=%x, flags=%c%c%c\n",
+	seq_printf(s, "    sync_id=%x, mode=%x flags=%c%c%c\n",
 		   d->sync_id,
+		   d->mode,
 		   (d->mode & DSSCOMP_SETUP_MODE_APPLY) ? 'A' : '-',
 		   (d->mode & DSSCOMP_SETUP_MODE_DISPLAY) ? 'D' : '-',
 		   (d->mode & DSSCOMP_SETUP_MODE_CAPTURE) ? 'C' : '-');
