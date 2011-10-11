@@ -63,6 +63,7 @@
 #include <plat/omap4-keypad.h>
 #include <plat/hwspinlock.h>
 #include <plat/nokia-dsi-panel.h>
+#include "omap4_ion.h"
 #include "mux.h"
 #include "hsmmc.h"
 #include "smartreflex-class3.h"

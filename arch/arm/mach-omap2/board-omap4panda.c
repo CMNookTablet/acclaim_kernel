@@ -54,6 +54,7 @@
 #include <plat/opp_twl_tps.h>
 #include <plat/hwspinlock.h>
 #include "mux.h"
+#include "omap4_ion.h"
 #include "hsmmc.h"
 #include "smartreflex-class3.h"
 
