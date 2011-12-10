@@ -354,6 +354,9 @@ enum omapdss_buffer_addressing_type {
 	OMAP_DSS_BUFADDR_BYTYPE,	/* using buffer types */
 	OMAP_DSS_BUFADDR_ION,		/* using ion handle(s) */
 	OMAP_DSS_BUFADDR_GRALLOC,	/* using gralloc handle */
+	OMAP_DSS_BUFADDR_OVL_IX,	/* using a prior overlay */
+	OMAP_DSS_BUFADDR_LAYER_IX,	/* using a Post2 layer */
+	OMAP_DSS_BUFADDR_FB,		/* using framebuffer memory */
 };
 
 struct dss2_ovl_info {
@@ -383,7 +386,7 @@ struct dss2_ovl_info {
 
 		/* kernel-space interfaces */
 		struct {
-			__u32 ba;	/* base address */
+			__u32 ba;	/* base address or index */
 			__u32 uv;	/* uv address */
 		};
 	};
