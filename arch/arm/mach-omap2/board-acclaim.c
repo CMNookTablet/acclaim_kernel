@@ -117,7 +117,7 @@ static void __init omap_4430_acclaim_map_io(void)
 	omap44xx_map_common_io();
 }
 
-MACHINE_START(OMAP4_ACCLAIM, "OMAP4430 ACCLAIM")
+MACHINE_START(OMAP4_ACCLAIM, "acclaim")
 	.phys_io	= 0x48000000,
 	.io_pg_offst	= ((0xfa000000) >> 18) & 0xfffc,
 	.boot_params	= 0x80000100,
