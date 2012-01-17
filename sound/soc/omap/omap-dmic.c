@@ -615,7 +615,9 @@ static __devinit int asoc_dmic_probe(struct platform_device *pdev)
 	pm_runtime_enable(dmic->dev);
 
 	/* Disable lines while request is ongoing */
+	pm_runtime_get_sync(dmic->dev);
 	omap_dmic_write(dmic, DMIC_CTRL, 0x00);
+	pm_runtime_put_sync(dmic->dev);
 
 	ret = request_threaded_irq(dmic->irq, NULL, omap_dmic_irq_handler,
 				   IRQF_ONESHOT, "DMIC", (void *)dmic);

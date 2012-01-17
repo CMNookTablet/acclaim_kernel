@@ -954,8 +954,9 @@ static int __init sdp4430_soc_init(void)
 {
 	int ret = 0;
 
-	if (!machine_is_omap_4430sdp() && !machine_is_omap4_panda()) {
-		pr_debug("Not SDP4430 or PandaBoard!\n");
+	if (!machine_is_omap_4430sdp() &&
+		!machine_is_omap_tabletblaze()) {
+		pr_debug("Not SDP4430 or BlazeTablet\n");
 		return -ENODEV;
 	}
 	printk(KERN_INFO "SDP4430 SoC init\n");

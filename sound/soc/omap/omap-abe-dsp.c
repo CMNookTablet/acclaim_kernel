@@ -48,6 +48,9 @@
 #include <plat/omap-pm.h>
 #include <plat/powerdomain.h>
 #include <plat/prcm.h>
+
+#include <mach/omap4-common.h>
+
 #include "../../../arch/arm/mach-omap2/pm.h"
 #include "../../../arch/arm/mach-omap2/cm-regbits-44xx.h"
 
@@ -178,7 +181,6 @@ struct abe_data {
 	struct early_suspend early_suspend;
 #endif
 	int early_suspended;
-	int dpll_cascading;
 };
 
 static struct abe_data *abe;
@@ -353,54 +355,6 @@ static int abe_fe_active_count(struct abe_data *abe)
 	return count;
 }
 
-static int abe_enter_dpll_cascading(struct abe_data *abe)
-{
-	struct platform_device *pdev = abe->pdev;
-	struct omap4_abe_dsp_pdata *pdata = abe->abe_pdata;
-	int ret;
-
-	if (abe->dpll_cascading)
-		return 0;
-
-	dev_dbg(&pdev->dev, "Enter DPLL cascading\n");
-	if (pdata->enter_dpll_cascade) {
-		ret = pdata->enter_dpll_cascade();
-		if (ret < 0) {
-			dev_err(&pdev->dev, "failed to enter DPLL cascading %d\n",
-				ret);
-			return ret;
-		}
-	}
-
-	abe->dpll_cascading = 1;
-
-	return 0;
-}
-
-static int abe_exit_dpll_cascading(struct abe_data *abe)
-{
-	struct platform_device *pdev = abe->pdev;
-	struct omap4_abe_dsp_pdata *pdata = abe->abe_pdata;
-	int ret;
-
-	if (!abe->dpll_cascading)
-		return 0;
-
-	dev_dbg(&pdev->dev, "Exit DPLL cascading\n");
-	if (pdata->exit_dpll_cascade) {
-		ret = pdata->exit_dpll_cascade();
-		if (ret < 0) {
-			dev_err(&pdev->dev, "failed to exit DPLL cascading %d\n",
-				ret);
-			return ret;
-		}
-	}
-
-	abe->dpll_cascading = 0;
-
-	return 0;
-}
-
 static int abe_fe_event(struct snd_soc_dapm_widget *w,
 			struct snd_kcontrol *kcontrol, int event)
 {
@@ -415,7 +369,7 @@ static int abe_fe_event(struct snd_soc_dapm_widget *w,
 		abe->fe_active[index]++;
 		active = abe_fe_active_count(abe);
 		if (!abe->early_suspended || (active > 1) || !abe->fe_active[6])
-			ret = abe_exit_dpll_cascading(abe);
+			ret = dpll_cascading_blocker_hold(&abe->pdev->dev);
 	} else {
 		abe->fe_active[index]--;
 	}
@@ -2230,12 +2184,12 @@ static int aess_stream_event(struct snd_soc_dapm_context *dapm, int event)
 		 */
 		if (abe->early_suspended && (active == 1) &&
 		    abe->fe_active[6] && (abe->opp <= 50))
-			ret = abe_enter_dpll_cascading(abe);
+			ret = dpll_cascading_blocker_release(&pdev->dev);
 		else
-			ret = abe_exit_dpll_cascading(abe);
+			ret = dpll_cascading_blocker_hold(&pdev->dev);
 		break;
 	case SND_SOC_DAPM_STREAM_STOP:
-		ret = abe_exit_dpll_cascading(abe);
+		ret = dpll_cascading_blocker_hold(&pdev->dev);
 		break;
 	default:
 		break;
@@ -2254,6 +2208,21 @@ static struct snd_soc_platform_driver omap_aess_platform = {
 };
 
 #if defined(CONFIG_PM)
+static int aess_suspend(struct device *dev)
+{
+	/*
+	 * ensure we're out of DPLL cascading to properly
+	 * enter into suspend state
+	 */
+	return dpll_cascading_blocker_hold(dev);
+}
+
+static int aess_resume(struct device *dev)
+{
+	/* block DPLL cascading till conditions are met */
+	return dpll_cascading_blocker_hold(dev);
+}
+
 static int omap_pm_abe_get_dev_context_loss_count(struct device *dev)
 {
 	int ret;
@@ -2275,8 +2244,15 @@ static int omap_pm_abe_get_dev_context_loss_count(struct device *dev)
 }
 
 #else
+#define aess_runtime_suspend   NULL
+#define aess_runtime_resume    NULL
 #define omap_pm_abe_get_dev_context_loss_count NULL
 #endif
+
+static const struct dev_pm_ops aess_pm_ops = {
+	.suspend	= aess_suspend,
+	.resume		= aess_resume,
+};
 
 #ifdef CONFIG_HAS_EARLYSUSPEND
 static void abe_early_suspend(struct early_suspend *handler)
@@ -2300,7 +2276,7 @@ static void abe_early_suspend(struct early_suspend *handler)
 	 * - OPP is 50 or less (DL1 path only)
 	 */
 	if ((active == 1) && abe->fe_active[6] && (abe->opp <= 50))
-		abe_enter_dpll_cascading(abe);
+		dpll_cascading_blocker_release(&abe->pdev->dev);
 
 	abe->early_suspended = 1;
 }
@@ -2321,7 +2297,7 @@ static void abe_late_resume(struct early_suspend *handler)
 		OMAP4_CM_MPU_STATICDEP_OFFSET);
 
 	/* exit dpll cascading since screen will be turned on */
-	abe_exit_dpll_cascading(abe);
+	dpll_cascading_blocker_hold(&abe->pdev->dev);
 
 	abe->early_suspended = 0;
 }
@@ -2414,6 +2390,7 @@ static struct platform_driver omap_aess_driver = {
 	.driver = {
 		.name = "omap-aess-audio",
 		.owner = THIS_MODULE,
+		.pm = &aess_pm_ops,
 	},
 	.probe = abe_engine_probe,
 	.remove = __devexit_p(abe_engine_remove),
