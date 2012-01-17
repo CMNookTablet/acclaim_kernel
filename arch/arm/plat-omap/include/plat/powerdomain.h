@@ -220,11 +220,11 @@ int pwrdm_clkdm_state_switch(struct clockdomain *clkdm);
 int pwrdm_pre_transition(void);
 int pwrdm_post_transition(void);
 int pwrdm_set_lowpwrstchange(struct powerdomain *pwrdm);
+int pwrdm_get_context_loss_count(struct powerdomain *pwrdm);
 
 int pwrdm_wakeuplat_set_constraint(struct powerdomain *pwrdm,
 				   struct device *dev, unsigned long t);
 int pwrdm_wakeuplat_release_constraint(struct powerdomain *pwrdm,
 				       struct device *dev);
-void pwrdm_wakeuplat_update_pwrst(struct powerdomain *pwrdm);
 
 #endif
