@@ -638,6 +638,8 @@ EXPORT_SYMBOL(dpll_cascading_blocker_release);
 int omap4_dpll_low_power_cascade_enter()
 {
 	int ret = 0;
+	u32 mask;
+	struct clockdomain *l3_emif_clkdm;
 	struct clk *dpll_abe_ck, *dpll_abe_m3x2_ck;
 	struct clk *dpll_mpu_ck, *div_mpu_hs_clk;
 	struct clk *dpll_iva_ck, *div_iva_hs_clk, *iva_hsd_byp_clk_mux_ck;
@@ -680,6 +682,10 @@ int omap4_dpll_low_power_cascade_enter()
 	emu_sys_44xx_clkdm = clkdm_lookup("emu_sys_44xx_clkdm");
 	abe_44xx_clkdm = clkdm_lookup("abe_clkdm");
 
+	/* Just to avoid look-up on every call to speed up */
+	if (!l3_emif_clkdm)
+		l3_emif_clkdm = clkdm_lookup("l3_emif_clkdm");
+
 	if (!dpll_abe_ck || !dpll_mpu_ck || !div_mpu_hs_clk || !dpll_iva_ck ||
 		!div_iva_hs_clk || !iva_hsd_byp_clk_mux_ck || !dpll_core_m2_ck
 		|| !dpll_abe_m3x2_ck || !div_core_ck || !dpll_core_x2_ck ||
@@ -687,7 +693,8 @@ int omap4_dpll_low_power_cascade_enter()
 		!l4_wkup_clk_mux_ck || !lp_clk_div_ck || !pmd_stm_clock_mux_ck
 		|| !pmd_trace_clk_mux_ck || !dpll_core_m6x2_ck ||
 		!dpll_core_ck || !dpll_per_ck || !func_48m_fclk
-		|| !per_hsd_byp_clk_mux_ck || !per_hs_clk_div_ck) {
+		|| !per_hsd_byp_clk_mux_ck || !per_hs_clk_div_ck
+		|| !l3_emif_clkdm) {
 
 		pr_warn("%s: failed to get all necessary clocks\n", __func__);
 		ret = -ENODEV;
@@ -852,6 +859,27 @@ int omap4_dpll_low_power_cascade_enter()
 
 	omap2_clkdm_allow_idle(emu_sys_44xx_clkdm);*/
 
+	/*
+	 * Disable SD for MPU towards EMIF,L3_2 and L4CFG
+	 * Note: SD setting modification requires target domain to be ON
+	 */
+
+	/* Configures MEMIF domain in SW_WKUP */
+	omap2_clkdm_wakeup(l3_emif_clkdm);
+
+	/* Wait for CORE PD transition */
+	pwrdm_clkdm_state_switch(l3_emif_clkdm);
+
+	/* Disable SD for MPU towards EMIF,L3_2 and L4CFG */
+	mask = OMAP4430_MEMIF_STATDEP_MASK | OMAP4430_L3_2_STATDEP_MASK
+		| OMAP4430_L4CFG_STATDEP_MASK;
+
+	cm_rmw_mod_reg_bits(mask, 0, OMAP4430_CM1_MPU_MOD,
+		OMAP4_CM_MPU_STATICDEP_OFFSET);
+
+	/* Configures MEMIF domain back to HW_AUTO */
+	omap2_clkdm_allow_idle(l3_emif_clkdm);
+
 	recalculate_root_clocks();
 
 	goto out;
@@ -897,6 +925,8 @@ out:
 int omap4_dpll_low_power_cascade_exit()
 {
 	int ret = 0;
+	u32 reg, mask;
+	struct clockdomain *l3_emif_clkdm;
 	struct clk *sys_clkin_ck;
 	struct clk *dpll_abe_ck, *dpll_abe_m3x2_ck;
 	struct clk *dpll_mpu_ck, *div_mpu_hs_clk;
@@ -941,6 +971,10 @@ int omap4_dpll_low_power_cascade_exit()
 	emu_sys_44xx_clkdm = clkdm_lookup("emu_sys_44xx_clkdm");
 	abe_44xx_clkdm = clkdm_lookup("abe_clkdm");
 
+	/* Just to avoid look-up on every call to speed up */
+	if (!l3_emif_clkdm)
+		l3_emif_clkdm = clkdm_lookup("l3_emif_clkdm");
+
 	if (!dpll_abe_ck || !dpll_mpu_ck || !div_mpu_hs_clk || !dpll_iva_ck ||
 		!div_iva_hs_clk || !iva_hsd_byp_clk_mux_ck || !dpll_core_m2_ck
 		|| !dpll_abe_m3x2_ck || !div_core_ck || !dpll_core_x2_ck ||
@@ -949,11 +983,34 @@ int omap4_dpll_low_power_cascade_exit()
 		|| !pmd_trace_clk_mux_ck || !dpll_core_m6x2_ck
 		|| !sys_clkin_ck || !dpll_core_ck || !l3_div_ck || !l4_div_ck
 		|| !dpll_per_ck || !func_48m_fclk || !per_hsd_byp_clk_mux_ck
-		|| !per_hs_clk_div_ck) {
+		|| !per_hs_clk_div_ck || !l3_emif_clkdm) {
 		pr_warn("%s: failed to get all necessary clocks\n", __func__);
 		ret = -ENODEV;
 		goto out;
 	}
+
+	/*
+	 * Enable SD for MPU towards EMIF,L3_2 and L4CFG
+	 * Note: SD setting modification requires target domain to be ON
+	 */
+
+	/* Configures MEMIF domain in SW_WKUP */
+	omap2_clkdm_wakeup(l3_emif_clkdm);
+
+	/* Wait for CORE PD transition */
+	pwrdm_clkdm_state_switch(l3_emif_clkdm);
+
+	/* Enable SD for MPU towards EMIF,L3_2 and L4CFG */
+	reg = 1 << OMAP4430_MEMIF_STATDEP_SHIFT |
+		1 << OMAP4430_L3_2_STATDEP_SHIFT |
+		1 << OMAP4430_L4CFG_STATDEP_SHIFT;
+	mask = OMAP4430_MEMIF_STATDEP_MASK | OMAP4430_L3_2_STATDEP_MASK
+		| OMAP4430_L4CFG_STATDEP_MASK;
+	cm_rmw_mod_reg_bits(mask, reg, OMAP4430_CM1_MPU_MOD,
+		OMAP4_CM_MPU_STATICDEP_OFFSET);
+
+	/* Configures MEMIF domain back to HW_AUTO */
+	omap2_clkdm_allow_idle(l3_emif_clkdm);
 
 	if (delayed_work_pending(&lpmode_work))
 		cancel_delayed_work_sync(&lpmode_work);

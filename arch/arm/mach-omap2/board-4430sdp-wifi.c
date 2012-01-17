@@ -77,7 +77,14 @@ static int sdp4430_wifi_power_state;
 int sdp4430_wifi_power(int on)
 {
 	printk(KERN_WARNING"%s: %d\n", __func__, on);
-	gpio_set_value(SDP4430_WIFI_PMENA_GPIO, on);
+	if (on) {
+		gpio_set_value(SDP4430_WIFI_PWEN_GPIO, on);
+		udelay(800);
+		gpio_set_value(SDP4430_WIFI_PMENA_GPIO, on);
+	} else {
+		gpio_set_value(SDP4430_WIFI_PMENA_GPIO, on);
+		gpio_set_value(SDP4430_WIFI_PWEN_GPIO, on);
+	}
 	sdp4430_wifi_power_state = on;
 	return 0;
 }
@@ -136,6 +143,14 @@ static int __init sdp4430_wifi_init(void)
 		goto out;
 	}
 	gpio_direction_output(SDP4430_WIFI_PMENA_GPIO, 0);
+
+	ret = gpio_request(SDP4430_WIFI_PWEN_GPIO, "wifi_pwen");
+	if (ret < 0) {
+		pr_err("%s: can't reserve GPIO: %d\n", __func__,
+		SDP4430_WIFI_PWEN_GPIO);
+		goto out;
+	}
+	gpio_direction_output(SDP4430_WIFI_PWEN_GPIO, 0);
 
 	ret = gpio_request(SDP4430_WIFI_IRQ_GPIO, "wifi_irq");
 	if (ret < 0) {

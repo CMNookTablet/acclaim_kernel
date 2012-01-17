@@ -82,7 +82,7 @@ config MACH_OMAP3EVM
 
 config WIFI_CONTROL_FUNC
         bool "Enable WiFi control function abstraction"
-	depends on MACH_OMAP_4430SDP || MACH_OMAP_ZOOM2 || MACH_OMAP_ZOOM3
+        depends on MACH_OMAP4_ACCLAIM || MACH_OMAP_4430SDP || MACH_OMAP_ZOOM2 || MACH_OMAP_ZOOM3
         select WIRELESS_EXT
         select WEXT_CORE
         select WEXT_PROC
@@ -234,6 +234,10 @@ config MACH_OMAP_4430SDP
 
 config MACH_OMAP4_PANDA
 	bool "OMAP4 based Panda board"
+	depends on ARCH_OMAP4
+
+config MACH_OMAP4_ACCLAIM
+	bool "OMAP4 based acclaim board"
 	depends on ARCH_OMAP4
 
 config ERRATA_OMAP4_AXI2OCP

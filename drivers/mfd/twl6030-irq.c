@@ -93,6 +93,7 @@ static int twl6030_irq_thread(void *data)
 	static unsigned i2c_errors;
 	static const unsigned max_i2c_errors = 100;
 	int ret;
+	int charger_vbus = 0;
 
 	current->flags |= PF_NOFREEZE;
 
@@ -131,8 +132,10 @@ static int twl6030_irq_thread(void *data)
 		 * Since VBUS status bit is not reliable for VBUS disconnect
 		 * use CHARGER VBUS detection status bit instead.
 		 */
-		if (sts.bytes[2] & 0x10)
+		if (sts.bytes[2] & 0x10) {
+			charger_vbus = 1;
 			sts.bytes[2] |= 0x08;
+		}
 
 		for (i = 0; sts.int_sts; sts.int_sts >>= 1, i++) {
 			local_irq_disable();
@@ -161,7 +164,7 @@ static int twl6030_irq_thread(void *data)
 				/* These can't be masked ... always warn
 				 * if we get any surprises.
 				 */
-				if (d->status & IRQ_DISABLED) {
+				if ((d->status & IRQ_DISABLED) && !charger_vbus) {
 					pr_warning("twl handler not called, irq is disabled!\n");
 					note_interrupt(module_irq, d,
 							IRQ_NONE);
@@ -170,10 +173,10 @@ static int twl6030_irq_thread(void *data)
 					d->handle_irq(module_irq, d);
 
 			}
-		local_irq_enable();
+			local_irq_enable();
 		}
-		ret = twl_i2c_write(TWL_MODULE_PIH, sts.bytes,
-				REG_INT_STS_A, 3); /* clear INT_STS_A */
+		ret = twl_i2c_write_u8(TWL_MODULE_PIH, 0x0,
+				REG_INT_STS_A); /* clear INT_STS_A */
 		if (ret)
 			pr_warning("twl6030: I2C error in clearing PIH ISR\n");
 
@@ -299,6 +302,7 @@ int twl6030_mmc_card_detect(struct device *dev, int slot)
 {
 	int ret = -EIO;
 	u8 read_reg = 0;
+	int polarity = 0;
 	struct platform_device *pdev = container_of(dev,
 					struct platform_device, dev);
 
@@ -310,8 +314,15 @@ int twl6030_mmc_card_detect(struct device *dev, int slot)
 		 */
 		ret = twl_i2c_read_u8(TWL6030_MODULE_ID0, &read_reg,
 							TWL6030_MMCCTRL);
+		if ( read_reg & 0x04 )
+			polarity = 1;
+
 		if (ret >= 0)
 			ret = read_reg & STS_MMC;
+
+		if (polarity == 1 )
+			ret ^= 1;
+
 		break;
 	default:
 		pr_err("Unkown MMC controller %d in %s\n", pdev->id, __func__);
@@ -368,7 +379,7 @@ int twl6030_init_irq(int irq_num, unsigned irq_base, unsigned irq_end)
 		goto fail_kthread;
 	}
 
-	status = request_irq(irq_num, handle_twl6030_pih, IRQF_DISABLED,
+	status = request_irq(irq_num, handle_twl6030_pih, IRQF_TRIGGER_FALLING,
 				"TWL6030-PIH", &irq_event);
 	if (status < 0) {
 		pr_err("twl6030: could not claim irq%d: %d\n", irq_num, status);

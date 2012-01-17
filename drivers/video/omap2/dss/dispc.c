@@ -39,6 +39,7 @@
 #include <plat/display.h>
 
 #include "dss.h"
+#include "gammatable.h"
 #ifdef CONFIG_TILER_OMAP
 #include <mach/tiler.h>
 #endif
@@ -340,6 +341,7 @@ static struct {
 	u32	fifo_size[DISPC_NUM_PIPELINES];
 
 	spinlock_t irq_lock;
+	spinlock_t irq_lock_sync;
 	u32 irq_error_mask;
 	struct omap_dispc_isr_data registered_isr[DISPC_MAX_NR_ISRS];
 	u32 error_irqs;
@@ -1876,6 +1878,52 @@ void dispc_enable_gamma_table(bool enable)
 	enable_clocks(1);
 	REG_FLD_MOD(DISPC_CONFIG, enable, 9, 9);
 	enable_clocks(0);
+}
+
+void dispc_enable_cpr(enum omap_channel channel, bool enable)
+{
+	switch (channel) {
+	case OMAP_DSS_CHANNEL_LCD:
+		REG_FLD_MOD(DISPC_CONFIG, enable, 15, 15);
+		break;
+	case OMAP_DSS_CHANNEL_LCD2:
+		REG_FLD_MOD(DISPC_CONFIG2, enable, 15, 15);
+		break;
+	default:
+		;
+	}
+}
+
+void dispc_set_cpr_coef(enum omap_channel channel,
+		struct omap_dss_cpr_coefs *coefs)
+{
+	u32 coef_r, coef_g, coef_b;
+
+	if (channel != OMAP_DSS_CHANNEL_LCD && channel != OMAP_DSS_CHANNEL_LCD2)
+		return;
+
+	coef_r = FLD_VAL(coefs->rr, 31, 22) | FLD_VAL(coefs->rg, 20, 11) |
+		FLD_VAL(coefs->rb, 9, 0);
+	coef_g = FLD_VAL(coefs->gr, 31, 22) | FLD_VAL(coefs->gg, 20, 11) |
+		FLD_VAL(coefs->gb, 9, 0);
+	coef_b = FLD_VAL(coefs->br, 31, 22) | FLD_VAL(coefs->bg, 20, 11) |
+		FLD_VAL(coefs->bb, 9, 0);
+
+	switch (channel) {
+	case OMAP_DSS_CHANNEL_LCD:
+		dispc_write_reg(DISPC_CPR_COEF_R, coef_r);
+		dispc_write_reg(DISPC_CPR_COEF_G, coef_g);
+		dispc_write_reg(DISPC_CPR_COEF_B, coef_b);
+		break;
+	case OMAP_DSS_CHANNEL_LCD2:
+		dispc_write_reg(DISPC_CPR2_COEF_R, coef_r);
+		dispc_write_reg(DISPC_CPR2_COEF_G, coef_g);
+		dispc_write_reg(DISPC_CPR2_COEF_B, coef_b);
+		break;
+	case OMAP_DSS_CHANNEL_DIGIT:
+	default:
+		;
+	}
 }
 
 static void _dispc_enable_vid_color_conv(enum omap_plane plane, bool enable)
@@ -3802,6 +3850,36 @@ bool dispc_trans_key_enabled(enum omap_channel ch)
 	return enabled;
 }
 
+int dispc_enable_gamma(enum omap_channel ch, u8 gamma)
+{
+#ifdef CONFIG_ARCH_OMAP4
+	u32 i, temp, channel;
+	static int enabled;
+
+	channel = ch == OMAP_DSS_CHANNEL_LCD ? 0 :
+		 ch == OMAP_DSS_CHANNEL_LCD2 ? 1 : 2;
+
+	enable_clocks(1);
+
+	if (gamma > NO_OF_GAMMA_TABLES)
+		return -EINVAL;
+
+	if (gamma) {
+		u8 *tablePtr = gammaTablePtr[gamma - 1];
+
+		for (i = 0; i < GAMMA_TBL_SZ; i++) {
+			temp =  tablePtr[i];
+			temp =  (i<<24)|(temp|(temp<<8)|(temp<<16));
+			dispc_write_reg(DISPC_GAMMA_TABLE(channel), temp);
+		}
+	}
+	enabled = enabled & ~(1 << channel) | (gamma ? (1 << channel) : 0);
+	REG_FLD_MOD(DISPC_CONFIG, (enabled & 1), 3, 3);
+	REG_FLD_MOD(DISPC_CONFIG, !!(enabled & 6), 9, 9);
+
+	return 0;
+#endif
+}
 
 void dispc_set_tft_data_lines(enum omap_channel channel, u8 data_lines)
 {
@@ -4643,6 +4721,19 @@ int omap_dispc_unregister_isr(omap_dispc_isr_t isr, void *arg, u32 mask)
 }
 EXPORT_SYMBOL(omap_dispc_unregister_isr);
 
+int omap_dispc_unregister_isr_sync(omap_dispc_isr_t isr, void *arg, u32 mask)
+{
+	int flags;
+	int ret;
+
+	spin_lock_irqsave(&dispc.irq_lock_sync, flags);
+	ret = omap_dispc_unregister_isr(isr, arg, mask);
+	spin_unlock_irqrestore(&dispc.irq_lock_sync, flags);
+
+	return ret;
+}
+EXPORT_SYMBOL(omap_dispc_unregister_isr_sync);
+
 #ifdef DEBUG
 static void print_irq_status(u32 status)
 {
@@ -4679,6 +4770,7 @@ void dispc_irq_handler(void)
 	struct omap_dispc_isr_data *isr_data;
 	struct omap_dispc_isr_data registered_isr[DISPC_MAX_NR_ISRS];
 
+	spin_lock(&dispc.irq_lock_sync);
 	spin_lock(&dispc.irq_lock);
 
 	irqstatus = dispc_read_reg(DISPC_IRQSTATUS);
@@ -4733,6 +4825,7 @@ void dispc_irq_handler(void)
 	}
 
 	spin_unlock(&dispc.irq_lock);
+	spin_unlock(&dispc.irq_lock_sync);
 }
 
 int omapdss_manager_reset(struct omap_overlay_manager *mgr)
@@ -4932,7 +5025,7 @@ int omap_dispc_wait_for_irq_timeout(u32 irqmask, unsigned long timeout)
 
 	timeout = wait_for_completion_timeout(&completion, timeout);
 
-	omap_dispc_unregister_isr(dispc_irq_wait_handler, &completion, irqmask);
+	omap_dispc_unregister_isr_sync(dispc_irq_wait_handler, &completion, irqmask);
 
 	if (timeout == 0)
 		return -ETIMEDOUT;
@@ -4963,13 +5056,49 @@ int omap_dispc_wait_for_irq_interruptible_timeout(u32 irqmask,
 	timeout = wait_for_completion_interruptible_timeout(&completion,
 			timeout);
 
-	omap_dispc_unregister_isr(dispc_irq_wait_handler, &completion, irqmask);
+	omap_dispc_unregister_isr_sync(dispc_irq_wait_handler, &completion, irqmask);
 
 	if (timeout == 0)
 		return -ETIMEDOUT;
 
 	if (timeout == -ERESTARTSYS)
 		return -ERESTARTSYS;
+
+	return 0;
+}
+
+struct dispc_run_irq_ctx {
+	void (*on_isr_cb)(void *);
+	void *data;
+	struct completion *completion;
+};
+
+int omap_dispc_run_on_irq(u32 irqmask, void (*on_isr_cb)(void *), void *data)
+{
+	void dispc_irq_wait_handler(void *data, u32 mask)
+	{
+		struct dispc_run_irq_ctx *ctx = (struct dispc_run_irq_ctx *) data;
+
+		ctx->on_isr_cb(ctx->data);
+		complete(ctx->completion);
+	}
+
+	int r;
+	struct dispc_run_irq_ctx ctx;
+	DECLARE_COMPLETION_ONSTACK(completion);
+
+	ctx.data = data;
+	ctx.on_isr_cb = on_isr_cb;
+	ctx.completion = &completion;
+
+	r = omap_dispc_register_isr(dispc_irq_wait_handler, &ctx, irqmask);
+
+	if (r)
+		return r;
+
+	wait_for_completion(&completion);
+
+	omap_dispc_unregister_isr(dispc_irq_wait_handler, &ctx, irqmask);
 
 	return 0;
 }
@@ -5094,6 +5223,7 @@ int dispc_init(struct platform_device *pdev)
 	dispc.pdev = pdev;
 
 	spin_lock_init(&dispc.irq_lock);
+	spin_lock_init(&dispc.irq_lock_sync);
 
 #ifdef CONFIG_OMAP2_DSS_COLLECT_IRQ_STATS
 	spin_lock_init(&dispc.irq_stats_lock);

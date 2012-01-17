@@ -26,6 +26,7 @@
 
 #include <plat/omap_device.h>
 #include <plat/powerdomain.h>
+#include <plat/control.h>
 #include <mach/hardware.h>
 #include <asm/irq.h>
 #include <mach/irqs.h>
@@ -174,6 +175,8 @@ struct gpio_bank {
 	bool off_mode_support;
 	u8 id;
 };
+
+extern u16 omap_mux_get_gpio(int gpio);
 
 /*
  * TODO: Cleanup gpio_bank usage as it is having information
@@ -1925,6 +1928,7 @@ static int gpio_bank_runtime_resume(struct device *dev)
 		}
 	} else if (bank->method == METHOD_GPIO_44XX) {
 		u32 l, gen, gen0, gen1;
+		int n;
 
 		__raw_writel(bank->saved_fallingdetect,
 				 bank->base + OMAP4_GPIO_FALLINGDETECT);
@@ -1953,6 +1957,28 @@ static int gpio_bank_runtime_resume(struct device *dev)
 		gen = l & (~(bank->saved_fallingdetect) & ~(bank->saved_risingdetect));
 		/* Consider all GPIO IRQs needed to be updated */
 		gen |= gen0 | gen1;
+
+		/* Make sure that PAD wakeup flags generate EDGE IRQ by SW.
+		 * This should avoid the "horribly racy" situation described
+		 * above.
+		 */
+		for (n = 0; n < bank->chip.ngpio; n++) {
+			u16 padconf = 0;
+
+			/* skip PAD wakeup workaround for GPIO pins that
+			 * do not have wakeup enabled
+			 */
+			if (!(bank->enabled_non_wakeup_gpios & (1u << n)))
+				continue;
+
+			padconf = omap_mux_get_gpio(bank->chip.base + n);
+			if (padconf & OMAP44XX_PADCONF_WAKEUPEVENT0) {
+				gen |= (1u << n) & bank->saved_fallingdetect;
+				gen |= (1u << n) & bank->saved_risingdetect;
+				l |= (1u << n) & bank->saved_fallingdetect;
+				l |= (1u << n) & bank->saved_risingdetect;
+			}
+		}
 
 		if (gen) {
 			u32 old0, old1;

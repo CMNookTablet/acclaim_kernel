@@ -39,6 +39,7 @@
 #include <linux/irq.h>
 #include <linux/videodev2.h>
 #include <linux/slab.h>
+#include <linux/delay.h>
 
 #ifndef CONFIG_ARCH_OMAP4
 #include <media/videobuf-dma-sg.h>
@@ -112,6 +113,8 @@ enum dma_channel_state {
 
 #define VDD2_OCP_FREQ_CONST     (cpu_is_omap34xx() ? \
 (cpu_is_omap3630() ? 200000 : 166000) : 0)
+
+#define VOUT_SUSPEND_TIMEOUT	1000
 
 #ifdef CONFIG_OMAP3_ISP_RESIZER_ON_OVERLAY
 struct isp_node pipe;
@@ -771,11 +774,11 @@ static void omap_vout_tiler_buffer_free(struct omap_vout_device *vout,
 		vout->buf_phy_addr_alloced[i] = 0;
 		vout->buf_phy_uv_addr[i] = 0;
 		vout->buf_phy_uv_addr_alloced[i] = 0;
+		vout->queued_buf_addr[i] = 0;
+		vout->queued_buf_uv_addr[i] = 0;
 	}
 }
-#endif /* ifndef CONFIG_ARCH_OMAP4 */
 
-#ifdef CONFIG_ARCH_OMAP4
 /* Allocate the buffers for  TILER space.  Ideally, the buffers will be ONLY
  in tiler space, with different rotated views available by just a convert.
  */
@@ -862,7 +865,54 @@ static void omap_vout_free_tiler_buffers(struct omap_vout_device *vout)
 	omap_vout_tiler_buffer_free(vout, vout->buffer_allocated, 0);
 	vout->buffer_allocated = 0;
 }
-#endif	/* ifdef CONFIG_ARCH_OMAP4 */
+
+struct tiler_work {
+	struct delayed_work dwork;
+	unsigned long retained_buff_address;
+};
+
+static int omap_vout_find_tiler_buffer_index(struct omap_vout_device *vout,
+					unsigned int count,
+					unsigned long paddr)
+{
+	int i;
+	unsigned long buf_paddr;
+
+	if (!paddr)
+		return -1;
+
+	for (i = 0; i < count; i++) {
+		buf_paddr = (unsigned long)vout->queued_buf_addr[i] + vout->cropped_offset[i];
+		if (buf_paddr == paddr)
+			return i;
+	}
+
+	return -1;
+}
+
+static void tiler_work_func(struct work_struct *work)
+{
+	struct tiler_work *twork = (struct tiler_work*)work;
+
+	if (twork->retained_buff_address) {
+		printk(KERN_INFO VOUT_NAME ": delayed free of buffer=0x%08lx\n",
+				twork->retained_buff_address);
+		tiler_free(twork->retained_buff_address);
+	}
+
+	kfree(twork);
+}
+
+static void schedule_delayed_tiler_work(struct omap_vout_device *vout, int buffer_index)
+{
+	struct tiler_work *twork = kzalloc(sizeof(struct tiler_work),GFP_KERNEL);
+
+	twork->retained_buff_address = vout->buf_phy_addr_alloced[buffer_index];
+	INIT_DELAYED_WORK(&twork->dwork, tiler_work_func);
+
+	schedule_delayed_work(&twork->dwork, msecs_to_jiffies(1000));
+}
+#endif	/* ifndef CONFIG_ARCH_OMAP4 */
 
 /* Convert V4L2 rotation to DSS rotation
  *	V4L2 understand 0, 90, 180, 270.
@@ -1305,6 +1355,12 @@ int omapvid_apply_changes(struct omap_vout_device *vout)
 		ovl = ovid->overlays[i];
 		if (!ovl->manager || !ovl->manager->device)
 			return -EINVAL;
+
+		if (ovl->disable_updates) {
+			printk(KERN_INFO VOUT_NAME ": overlay[%d] updates disabled\n", i);
+			continue;
+		}
+
 		dev = ovl->manager->device;
 		ovl->manager->apply(ovl->manager);
 #ifndef CONFIG_FB_OMAP2_FORCE_AUTO_UPDATE
@@ -2142,6 +2198,7 @@ static int omap_vout_release(struct file *file)
 			ovl->get_overlay_info(ovl, &info);
 			info.enabled = 0;
 			ovl->set_overlay_info(ovl, &info);
+			ovl->disable_updates = false;
 		}
 	}
 	/* Turn off the pipeline */
@@ -2195,7 +2252,6 @@ static int omap_vout_open(struct file *file)
 	struct omap_vout_device *vout = NULL;
 
 	vout = video_drvdata(file);
-
 
 	mutex_lock(&vout->lock);
 	vout->opened += 1;
@@ -2554,7 +2610,7 @@ static int vidioc_s_fmt_vid_overlay(struct file *file, void *fh,
 				return -EINVAL;
 		}
 
-		omapvid_apply_changes(vout);
+                omapvid_apply_changes(vout);
 	}
 
 	return ret;
@@ -2855,6 +2911,9 @@ static int vidioc_reqbufs(struct file *file, void *fh,
 #ifndef CONFIG_ARCH_OMAP4
 	unsigned int num_buffers = 0;
 	struct videobuf_dmabuf *dmabuf = NULL;
+#else
+	unsigned long paddr;
+	int index;
 #endif
 	struct omap_vout_device *vout = fh;
 	struct videobuf_queue *q = &vout->vbq;
@@ -2896,7 +2955,22 @@ static int vidioc_reqbufs(struct file *file, void *fh,
 		}
 		vout->buffer_allocated = num_buffers;
 #else
-		omap_vout_tiler_buffer_free(vout, vout->buffer_allocated, 0);
+		paddr = vout->vid_info.overlays[0]->info.paddr;
+		index = omap_vout_find_tiler_buffer_index(vout, vout->buffer_allocated, paddr);
+		if (index >= 0) {
+			if (paddr != vout->buf_phy_addr_alloced[index] + vout->cropped_offset[index])
+				printk(KERN_WARNING VOUT_NAME ": WARNING paddr mismatch!\n");
+
+			printk(KERN_INFO VOUT_NAME ": delaying release of buffer[%d]=0x%08lx\n",
+				index, vout->buf_phy_addr_alloced[index]);
+			omap_vout_tiler_buffer_free(vout, index, 0);
+			/* skip release of buffer at index */
+			vout->buffer_allocated -= index - 1;
+			omap_vout_tiler_buffer_free(vout, vout->buffer_allocated, index + 1);
+			/* schedule delayed work to release the buffer */
+			schedule_delayed_tiler_work(vout, index);
+		} else
+			omap_vout_tiler_buffer_free(vout, vout->buffer_allocated, 0);
 		vout->buffer_allocated = 0;
 #endif
 		videobuf_mmap_free(q);
@@ -3161,6 +3235,7 @@ static int vidioc_streamon(struct file *file, void *fh, enum v4l2_buf_type i)
 				ret = -EINVAL;
 				goto streamon_err1;
 			}
+			ovl->disable_updates = false;
 		}
 	}
 
@@ -3176,7 +3251,6 @@ static int vidioc_streamon(struct file *file, void *fh, enum v4l2_buf_type i)
 			v4l2_err(&vout->vid_dev->v4l2_dev, "failed to change mode\n");
 	}
 	ret = 0;
-
 streamon_err1:
 	if (ret)
 		vidioc_streamoff(file, fh, i);
@@ -3205,16 +3279,16 @@ static int vidioc_streamoff(struct file *file, void *fh, enum v4l2_buf_type i)
 		DISPC_IRQ_FRAMEDONE2 | DISPC_IRQ_VSYNC2;
 
 	if (vout->wb_enabled)
-			mask |= DISPC_IRQ_FRAMEDONE_WB;
+		mask |= DISPC_IRQ_FRAMEDONE_WB;
 
-	omap_dispc_unregister_isr(omap_vout_isr, vout, mask);
+	omap_dispc_unregister_isr_sync(omap_vout_isr, vout, mask);
 
 	for (j = 0; j < ovid->num_overlays; j++) {
 		struct omap_overlay *ovl = ovid->overlays[j];
 
 		if (ovl->manager && ovl->manager->device) {
 			struct omap_overlay_info info;
-
+			ovl->disable_updates = true;
 			ovl->get_overlay_info(ovl, &info);
 			info.enabled = 0;
 			ret = ovl->set_overlay_info(ovl, &info);
@@ -3242,8 +3316,8 @@ static int vidioc_streamoff(struct file *file, void *fh, enum v4l2_buf_type i)
 #endif
 
 finish:
-	INIT_LIST_HEAD(&vout->dma_queue);
 	ret = videobuf_streamoff(&vout->vbq);
+	INIT_LIST_HEAD(&vout->dma_queue);
 	return ret;
 }
 
@@ -3690,6 +3764,34 @@ static DEVICE_ATTR(isprsz_mode, S_IRUGO|S_IWUGO,
 		isprsz_mode_show, isprsz_mode_store);
 #endif
 
+#ifdef CONFIG_HAS_EARLYSUSPEND
+static void omap_vout_early_suspend(struct early_suspend *handler)
+{
+	struct omap_vout_device *vout;
+	unsigned long start = jiffies;
+	unsigned long timeout = jiffies + msecs_to_jiffies(VOUT_SUSPEND_TIMEOUT);
+
+	vout = container_of(handler, struct omap_vout_device, early_suspend);
+
+	while (time_before(jiffies, timeout)) {
+		mutex_lock(&vout->lock);
+		if (!vout->opened) {
+			mutex_unlock(&vout->lock);
+			return;
+		}
+		mutex_unlock(&vout->lock);
+		msleep(1);
+	}
+
+	printk(KERN_WARNING VOUT_NAME ": timeout waiting for close\n");
+}
+
+static void omap_vout_late_resume(struct early_suspend *handler)
+{
+	/* we don't need to do anything on resume, resume is handled by user */
+}
+#endif
+
 /* Create video out devices */
 static int __init omap_vout_create_video_devices(struct platform_device *pdev)
 {
@@ -3790,6 +3892,13 @@ error:
 		return ret;
 
 success:
+#ifdef CONFIG_HAS_EARLYSUSPEND
+		vout->early_suspend.suspend = omap_vout_early_suspend;
+		vout->early_suspend.resume = omap_vout_late_resume;
+		vout->early_suspend.level = EARLY_SUSPEND_LEVEL_BLANK_SCREEN;
+		register_early_suspend(&vout->early_suspend);
+#endif
+
 #ifdef CONFIG_OMAP3_ISP_RESIZER_ON_OVERLAY
 		device_create_file(&vfd->dev, &dev_attr_isprsz_enable);
 		device_create_file(&vfd->dev, &dev_attr_isprsz_mode);
@@ -3874,7 +3983,7 @@ static int omap_vout_remove(struct platform_device *pdev)
 	return 0;
 }
 
-static int __init omap_vout_probe(struct platform_device *pdev)
+static int __devinit omap_vout_probe(struct platform_device *pdev)
 {
 	int ret = 0, i;
 	struct omap_overlay *ovl;

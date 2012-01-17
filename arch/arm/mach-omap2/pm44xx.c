@@ -21,6 +21,7 @@
 #include <linux/interrupt.h>
 #include <linux/delay.h>
 #include <linux/dma-mapping.h>
+#include <linux/console.h>
 
 #include <plat/powerdomain.h>
 #include <plat/clockdomain.h>
@@ -42,6 +43,7 @@
 #include "cm-regbits-44xx.h"
 #include "prm-regbits-44xx.h"
 #include "clock.h"
+#include "scrm_44xx.h"
 
 void *so_ram_address;
 
@@ -201,6 +203,7 @@ void omap4_enter_sleep(unsigned int cpu, unsigned int power_state)
 	int per_next_state = PWRDM_POWER_ON;
 	int core_next_state = PWRDM_POWER_ON;
 	int mpu_next_state = PWRDM_POWER_ON;
+	int console_sem_acquired = 0;
 
 	pwrdm_clear_all_prev_pwrst(cpu0_pwrdm);
 	pwrdm_clear_all_prev_pwrst(mpu_pwrdm);
@@ -211,6 +214,15 @@ void omap4_enter_sleep(unsigned int cpu, unsigned int power_state)
 	per_next_state = pwrdm_read_next_pwrst(per_pwrdm);
 	core_next_state = pwrdm_read_next_pwrst(core_pwrdm);
 	mpu_next_state = pwrdm_read_next_pwrst(mpu_pwrdm);
+
+	/*
+	 * Block console output in case it is on one of the OMAP UARTs.
+	 * If console semaphore cannot be acquired then we assume that
+	 * higher-level code already took care of this (e.g. the suspend
+	 * path does this before calling us).
+	 */
+	if (core_next_state < PWRDM_POWER_ON)
+		console_sem_acquired = !try_acquire_console_sem();
 
 	if (mpu_next_state < PWRDM_POWER_INACTIVE) {
 		/* Disable SR for MPU VDD */
@@ -354,6 +366,9 @@ void omap4_enter_sleep(unsigned int cpu, unsigned int power_state)
 		omap_smartreflex_enable(vdd_mpu);
 	}
 
+	if (console_sem_acquired)
+		release_console_sem();
+
 	return;
 }
 
@@ -372,6 +387,10 @@ static irqreturn_t prcm_interrupt_handler (int irq, void *dev_id)
 		/* Re-enable UART3 */
 		omap_writel(0x2, 0x4A009550);
 		omap_writel(0xD, 0x48020054);
+
+		/* Re-enable UART1 */
+		omap_writel(0x2, 0x4A009540);
+		omap_writel(0xD, 0x4806A054);
 
 		/* Modem HSI wakeup */
 		if (omap_hsi_is_io_wakeup_from_hsi())
@@ -420,6 +439,7 @@ static int omap4_pm_suspend(void)
 	 */
 	omap4_wakeupgen_clear_all(cpu_id);
 	omap4_wakeupgen_set_interrupt(cpu_id, OMAP44XX_IRQ_UART3);
+	omap4_wakeupgen_set_interrupt(cpu_id, OMAP44XX_IRQ_UART1);
 	omap4_wakeupgen_set_interrupt(cpu_id, OMAP44XX_IRQ_KBD_CTL);
 	omap4_wakeupgen_set_interrupt(cpu_id, OMAP44XX_IRQ_GPT1);
 	omap4_wakeupgen_set_interrupt(cpu_id, OMAP44XX_IRQ_PRCM);
@@ -744,6 +764,13 @@ static void __init prcm_setup_regs(void)
 	 */
 	prm_write_mod_reg(0x3, OMAP4430_PRM_DEVICE_MOD,
 				OMAP4_PRM_PWRREQCTRL_OFFSET);
+
+
+	/*Set setuptime and downtime into CLKSETUPTIME register*/
+	__raw_writel(0x00050080, OMAP4_SCRM_CLKSETUPTIME);
+
+	/*Set wakeuptime and sleeptime into PMICSETUPTIME register*/
+	__raw_writel(0x00200020, OMAP4_SCRM_PMICSETUPTIME);
 }
 
 /**

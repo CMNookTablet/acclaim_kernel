@@ -52,6 +52,8 @@
 #include <plat/mailbox.h>
 #include <plat/remoteproc.h>
 #include <plat/omap-pm.h>
+#include <plat/clockdomain.h>
+#include <mach/omap4-common.h>
 #include <linux/i2c.h>
 #include <linux/gpio.h>
 #include <linux/semaphore.h>
@@ -329,6 +331,9 @@ static struct iommu *ducati_iommu;
 static bool first_time = 1;
 static bool _is_iommu_up;
 static bool _is_mbox_up;
+
+static struct clockdomain *l3_1_clkdm;
+static struct clockdomain *l3_2_clkdm;
 
 /* BIOS flags states for each core in IPU */
 static void __iomem *sysm3Idle;
@@ -1105,15 +1110,6 @@ static inline int ipu_pm_get_regulator(struct ipu_pm_object *handle,
 		goto error;
 	}
 
-	/* enable regulator */
-	retval = regulator_enable(p_regulator);
-	if (retval) {
-		pr_err("%s %d Error enabling %s ldo\n", __func__
-							 , __LINE__
-							 , regulator_name);
-		goto error;
-	}
-
 	/* Get and store the regulator default voltage */
 	cam2_prev_volt = regulator_get_voltage(p_regulator);
 
@@ -1698,13 +1694,6 @@ static inline int ipu_pm_rel_regulator(struct ipu_pm_object *handle,
 		return PM_INVAL_REGULATOR;
 	}
 
-	/* disable LDO */
-	retval = regulator_disable(p_regulator);
-	if (retval) {
-		pr_err("%s %d Error disabling ldo\n", __func__, __LINE__);
-		return PM_INVAL_REGULATOR;
-	}
-
 	/* Release resource using PRCM API */
 	regulator_put(p_regulator);
 
@@ -1969,6 +1958,7 @@ static inline int ipu_pm_rel_iva_hd(struct ipu_pm_object *handle,
 		}
 	}
 #endif
+
 	return PM_SUCCESS;
 error:
 	return PM_UNSUPPORTED;
@@ -2609,6 +2599,7 @@ int ipu_pm_save_ctx(int proc_id)
 			cm_write_mod_reg(HW_AUTO, OMAP4430_CM2_CORE_MOD,
 					 OMAP4_CM_DUCATI_CLKSTCTRL_OFFSET);
 			handle->rcb_table->state_flag |= APP_PROC_DOWN;
+			dpll_cascading_blocker_release(app_rproc->dev);
 		}
 		pr_info("Sleep SYSM3\n");
 		retval = rproc_sleep(sys_rproc);
@@ -2617,6 +2608,7 @@ int ipu_pm_save_ctx(int proc_id)
 		cm_write_mod_reg(HW_AUTO, OMAP4430_CM2_CORE_MOD,
 				 OMAP4_CM_DUCATI_CLKSTCTRL_OFFSET);
 		handle->rcb_table->state_flag |= SYS_PROC_DOWN;
+		dpll_cascading_blocker_release(sys_rproc->dev);
 
 		/* If there is a message in the mbox restore
 		 * immediately after save.
@@ -2634,6 +2626,19 @@ int ipu_pm_save_ctx(int proc_id)
 			_is_iommu_up = 0;
 		} else
 			pr_err("Not able to save iommu");
+
+		/*
+		 * WA in order to be bale to remove syslink constraints during
+		 * AV playback: WA set L3_1 and L3_2 back to HW_AUTO
+		 */
+		/* Just to avoid look-up on every call to speed up */
+		if (!l3_1_clkdm)
+			l3_1_clkdm = clkdm_lookup("l3_1_clkdm");
+		if (!l3_2_clkdm)
+			l3_2_clkdm = clkdm_lookup("l3_2_clkdm");
+
+		omap2_clkdm_allow_idle(l3_1_clkdm);
+		omap2_clkdm_allow_idle(l3_2_clkdm);
 	} else
 		goto error;
 #ifdef CONFIG_OMAP_PM
@@ -2742,6 +2747,7 @@ int ipu_pm_restore_ctx(int proc_id)
 			pr_err("Not restoring iommu");
 
 		pr_info("Wakeup SYSM3\n");
+		dpll_cascading_blocker_hold(sys_rproc->dev);
 		retval = rproc_wakeup(sys_rproc);
 		if (retval)
 			goto error;
@@ -2750,6 +2756,7 @@ int ipu_pm_restore_ctx(int proc_id)
 		handle->rcb_table->state_flag &= ~SYS_PROC_DOWN;
 		if (ipu_pm_get_state(proc_id) & APP_PROC_LOADED) {
 			pr_info("Wakeup APPM3\n");
+			dpll_cascading_blocker_hold(app_rproc->dev);
 			retval = rproc_wakeup(app_rproc);
 			if (retval)
 				goto error;
@@ -2757,6 +2764,21 @@ int ipu_pm_restore_ctx(int proc_id)
 					 OMAP4_CM_DUCATI_CLKSTCTRL_OFFSET);
 			handle->rcb_table->state_flag &= ~APP_PROC_DOWN;
 		}
+
+		/*
+		 * WA in order to be bale to remove syslink constraints during
+		 * AV playback: set L3_1 and L3_2 to NO_SLEEP
+		 */
+		/* Just to avoid look-up on every call to speed up */
+		if (!l3_1_clkdm)
+			l3_1_clkdm = clkdm_lookup("l3_1_clkdm");
+
+		if (!l3_2_clkdm)
+			l3_2_clkdm = clkdm_lookup("l3_2_clkdm");
+
+		omap2_clkdm_deny_idle(l3_2_clkdm);
+		omap2_clkdm_deny_idle(l3_1_clkdm);
+
 #ifdef CONFIG_OMAP_PM
 		retval = omap_pm_set_max_sdma_lat(&pm_qos_handle_2,
 						IPU_PM_MM_MPU_LAT_CONSTRAINT);

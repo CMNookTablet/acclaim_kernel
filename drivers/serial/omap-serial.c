@@ -406,8 +406,14 @@ static inline irqreturn_t serial_omap_irq(int irq, void *dev_id)
 			if (lsr & UART_LSR_DR) {
 				receive_chars(up, &lsr);
 				if (omap_is_console_port(&up->port) &&
-						(up->plat_hold_wakelock))
+						(up->plat_hold_wakelock)) {
+					// release the lock here since
+					// plat_hold_wakelock may do a printk
+					// if so the console write will dead lock
+					spin_unlock_irqrestore(&up->port.lock, flags);
 					up->plat_hold_wakelock(up, WAKELK_IRQ);
+					spin_lock_irqsave(&up->port.lock, flags);
+				}
 			}
 		} else {
 			up->ier &= ~UART_IER_RDI;

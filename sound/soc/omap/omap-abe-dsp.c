@@ -102,7 +102,9 @@
 #define ABE_OPP_50		1
 #define ABE_OPP_100		2
 
-#define ABE_ROUTES_UL		14
+#define ABE_ROUTES_UL		16
+
+bool abe_can_enter_dpll_cascading;	/* initialized to false by gcc */
 
 bool abe_can_enter_dpll_cascading;	/* initialized to false by gcc */
 
@@ -192,6 +194,7 @@ static unsigned int abe_dsp_read(struct snd_soc_platform *platform,
 		unsigned int reg)
 {
 	struct abe_data *priv = snd_soc_platform_get_drvdata(platform);
+
 	return priv->dapm[reg];
 }
 
@@ -201,8 +204,8 @@ static int abe_dsp_write(struct snd_soc_platform *platform, unsigned int reg,
 	struct abe_data *priv = snd_soc_platform_get_drvdata(platform);
 	priv->dapm[reg] = val;
 
-	//dev_dbg(platform->dev, "fe: %d widget %d %s\n", abe->fe_id,
-	//		reg - ABE_WIDGET_START, val ? "on" : "off");
+	dev_dbg(platform->dev, "fe: %d widget %d %s\n", abe->fe_id,
+			reg - ABE_WIDGET_START, val ? "on" : "off");
 	return 0;
 }
 
@@ -272,7 +275,11 @@ static int abe_init_engine(struct snd_soc_platform *platform)
 	mutex_unlock(&abe->opp_mutex);
 
 	/* "tick" of the audio engine */
+#ifdef CONFIG_ABE_44100
+        abe_write_event_generator (EVENT_44100);
+#else
 	abe_write_event_generator(EVENT_TIMER);
+#endif
 
 	dl2_eq.equ_length = NBDL2COEFFS;
 
@@ -628,6 +635,9 @@ static const abe_router_t router[] = {
 		BT_UL_L_labelID, BT_UL_R_labelID,
 		AMIC_L_labelID, AMIC_R_labelID,
 		VX_REC_L_labelID, VX_REC_R_labelID,
+        /* Added by Mistral for the Audio ABE Recording */
+		MM_EXT_IN_L_labelID, MM_EXT_IN_R_labelID,
+
 };
 
 static int ul_mux_put_route(struct snd_kcontrol *kcontrol,
@@ -642,7 +652,6 @@ static int ul_mux_put_route(struct snd_kcontrol *kcontrol,
 	struct platform_device *pdev = abe->pdev;
 
 	pm_runtime_get_sync(&pdev->dev);
-
 	if (mux >= ABE_ROUTES_UL)
 		return 0;
 
@@ -721,7 +730,6 @@ static int volume_put_sdt_mixer(struct snd_kcontrol *kcontrol,
 	abe_write_mixer(MIXSDT, -12000 + (ucontrol->value.integer.value[0] * 100),
 				RAMP_0MS, mc->reg);
 	pm_runtime_put_sync(&pdev->dev);
-
 	return 1;
 }
 
@@ -1066,24 +1074,26 @@ static const struct soc_enum dmic_equalizer_enum =
 static const struct soc_enum sdt_equalizer_enum =
 	SOC_ENUM_SINGLE(EQSDT, 0, NBSDTEQ_PROFILES, sdt_equ_texts);
 
+/* Mistral updated the route_ul_texts to include MM_EXT_IN Uplink Ports */
 static const char *route_ul_texts[] =
 	{"None", "DMic0L", "DMic0R", "DMic1L", "DMic1R", "DMic2L", "DMic2R",
-	"BT Left", "BT Right", "AMic0", "AMic1", "VX Left", "VX Right"};
+	"BT Left", "BT Right", "AMic0", "AMic1", "VX Left", "VX Right",
+	"MM_EXT_IN Left", "MM_EXT_IN Right"};
 
 /* ROUTE_UL Mux table */
 static const struct soc_enum abe_enum[] = {
-		SOC_ENUM_SINGLE(ABE_MM_UL1(0), 0, 13, route_ul_texts),
-		SOC_ENUM_SINGLE(ABE_MM_UL1(1), 0, 13, route_ul_texts),
-		SOC_ENUM_SINGLE(ABE_MM_UL1(2), 0, 13, route_ul_texts),
-		SOC_ENUM_SINGLE(ABE_MM_UL1(3), 0, 13, route_ul_texts),
-		SOC_ENUM_SINGLE(ABE_MM_UL1(4), 0, 13, route_ul_texts),
-		SOC_ENUM_SINGLE(ABE_MM_UL1(5), 0, 13, route_ul_texts),
-		SOC_ENUM_SINGLE(ABE_MM_UL1(6), 0, 13, route_ul_texts),
-		SOC_ENUM_SINGLE(ABE_MM_UL1(7), 0, 13, route_ul_texts),
-		SOC_ENUM_SINGLE(ABE_MM_UL2(0), 0, 13, route_ul_texts),
-		SOC_ENUM_SINGLE(ABE_MM_UL2(1), 0, 13, route_ul_texts),
-		SOC_ENUM_SINGLE(ABE_VX_UL(0), 0, 13, route_ul_texts),
-		SOC_ENUM_SINGLE(ABE_VX_UL(1), 0, 13, route_ul_texts),
+		SOC_ENUM_SINGLE(ABE_MM_UL1(0), 0, 15, route_ul_texts),
+       		SOC_ENUM_SINGLE(ABE_MM_UL1(1), 0, 15, route_ul_texts),
+        	SOC_ENUM_SINGLE(ABE_MM_UL1(2), 0, 15, route_ul_texts),
+        	SOC_ENUM_SINGLE(ABE_MM_UL1(3), 0, 15, route_ul_texts),
+        	SOC_ENUM_SINGLE(ABE_MM_UL1(4), 0, 15, route_ul_texts),
+        	SOC_ENUM_SINGLE(ABE_MM_UL1(5), 0, 15, route_ul_texts),
+        	SOC_ENUM_SINGLE(ABE_MM_UL1(6), 0, 15, route_ul_texts),
+        	SOC_ENUM_SINGLE(ABE_MM_UL1(7), 0, 15, route_ul_texts),
+        	SOC_ENUM_SINGLE(ABE_MM_UL2(0), 0, 15, route_ul_texts),
+        	SOC_ENUM_SINGLE(ABE_MM_UL2(1), 0, 15, route_ul_texts),
+        	SOC_ENUM_SINGLE(ABE_VX_UL(0), 0, 15, route_ul_texts),
+        	SOC_ENUM_SINGLE(ABE_VX_UL(1), 0, 15, route_ul_texts),
 };
 
 static const struct snd_kcontrol_new mm_ul00_control =
@@ -1399,9 +1409,6 @@ static const struct snd_soc_dapm_widget abe_dapm_widgets[] = {
 	SND_SOC_DAPM_AIF_IN("DMIC2", "DMIC2 Capture", 0,
 			ABE_WIDGET(20), ABE_OPP_50, 0),
 
-	SND_SOC_DAPM_AIF_IN("VXREC", "VXREC Capture", 0,
-			ABE_WIDGET(44), ABE_OPP_50, 0),
-
 	/* ROUTE_UL Capture Muxes */
 	SND_SOC_DAPM_MUX("MUX_UL00",
 			ABE_WIDGET(21), ABE_OPP_50, 0, &mm_ul00_control),
@@ -1469,8 +1476,8 @@ static const struct snd_soc_dapm_widget abe_dapm_widgets[] = {
 			ABE_WIDGET(40), ABE_OPP_50, 0, &bt_vx_dl_switch_controls, 1),
 
 	/* Virtual MM_EXT_DL Switch TODO: confrm OPP level here */
-	SND_SOC_DAPM_MIXER("DL1 MM_EXT",
-			ABE_WIDGET(41), ABE_OPP_50, 0, &mm_ext_dl_switch_controls, 1),
+	SND_SOC_DAPM_MIXER("DL1 MM_EXT", ABE_WIDGET(41), ABE_OPP_25, 0,
+			   &mm_ext_dl_switch_controls, 1),
 
 	/*
 	 * The Following three are virtual switches to select the input port
@@ -1629,33 +1636,13 @@ static const struct snd_soc_dapm_route intercon[] = {
 	{"MM_UL1", NULL, "MUX_UL07"},
 
 	/* MUX_UL10 - ROUTE_UL - Chan 10  */
-	{"MUX_UL10", "DMic0L", "DMIC0"},
-	{"MUX_UL10", "DMic0R", "DMIC0"},
-	{"MUX_UL10", "DMic1L", "DMIC1"},
-	{"MUX_UL10", "DMic1R", "DMIC1"},
-	{"MUX_UL10", "DMic2L", "DMIC2"},
-	{"MUX_UL10", "DMic2R", "DMIC2"},
-	{"MUX_UL10", "BT Left", "BT_VX_UL"},
-	{"MUX_UL10", "BT Right", "BT_VX_UL"},
-	{"MUX_UL10", "AMic0", "AMIC_UL"},
-	{"MUX_UL10", "AMic1", "AMIC_UL"},
-	{"MUX_UL10", "VX Left", "Capture Mixer"},
-	{"MUX_UL10", "VX Right", "Capture Mixer"},
+	{"MUX_UL10", "MM_EXT_IN Left","MM_EXT_UL"},
+	{"MUX_UL10", "MM_EXT_IN Right","MM_EXT_UL"},
 	{"MM_UL2", NULL, "MUX_UL10"},
 
 	/* MUX_UL11 - ROUTE_UL - Chan 11  */
-	{"MUX_UL11", "DMic0L", "DMIC0"},
-	{"MUX_UL11", "DMic0R", "DMIC0"},
-	{"MUX_UL11", "DMic1L", "DMIC1"},
-	{"MUX_UL11", "DMic1R", "DMIC1"},
-	{"MUX_UL11", "DMic2L", "DMIC2"},
-	{"MUX_UL11", "DMic2R", "DMIC2"},
-	{"MUX_UL11", "BT Left", "BT_VX_UL"},
-	{"MUX_UL11", "BT Right", "BT_VX_UL"},
-	{"MUX_UL11", "AMic0", "AMIC_UL"},
-	{"MUX_UL11", "AMic1", "AMIC_UL"},
-	{"MUX_UL11", "VX Left", "Capture Mixer"},
-	{"MUX_UL11", "VX Right", "Capture Mixer"},
+	{"MUX_UL11", "MM_EXT_IN Left","MM_EXT_UL"},
+	{"MUX_UL11", "MM_EXT_IN Right","MM_EXT_UL"},
 	{"MM_UL2", NULL, "MUX_UL11"},
 
 	/* MUX_VX0 - ROUTE_UL - Chan 20  */
@@ -1671,6 +1658,8 @@ static const struct snd_soc_dapm_route intercon[] = {
 	{"MUX_VX0", "AMic1", "AMIC_UL"},
 	{"MUX_VX0", "VX Left", "Capture Mixer"},
 	{"MUX_VX0", "VX Right", "Capture Mixer"},
+	{"MUX_VX0", "MM_EXT_IN Left","MM_EXT_UL"},
+	{"MUX_VX0", "MM_EXT_IN Right","MM_EXT_UL"},
 
 	/* MUX_VX1 - ROUTE_UL - Chan 20  */
 	{"MUX_VX1", "DMic0L", "DMIC0"},
@@ -1685,6 +1674,8 @@ static const struct snd_soc_dapm_route intercon[] = {
 	{"MUX_VX1", "AMic1", "AMIC_UL"},
 	{"MUX_VX1", "VX Left", "Capture Mixer"},
 	{"MUX_VX1", "VX Right", "Capture Mixer"},
+	{"MUX_VX1", "MM_EXT_IN Left","MM_EXT_UL"},
+	{"MUX_VX1", "MM_EXT_IN Right","MM_EXT_UL"},
 
 	/* Capture Input Selection  for AMIC_UL  */
 	{"AMIC_UL MM_EXT", "Switch", "MM_EXT_UL"},
@@ -1728,10 +1719,10 @@ static const struct snd_soc_dapm_route intercon[] = {
 	{"PDM_DL2", NULL, "DL2 Mixer"},
 
 	/* VxREC Mixer */
-	{"Capture Mixer", "Tones", "VXREC"},
-	{"Capture Mixer", "Voice Playback", "VXREC"},
-	{"Capture Mixer", "Voice Capture", "VXREC"},
-	{"Capture Mixer", "Media Playback", "VXREC"},
+	{"Capture Mixer", "Tones", "TONES_DL"},
+	{"Capture Mixer", "Voice Playback", "VX DL VMixer"},
+	{"Capture Mixer", "Voice Capture", "VX UL VMixer"},
+	{"Capture Mixer", "Media Playback", "MM_DL VMixer"},
 	{"MM_DL VMixer", NULL, "MM_DL"},
 	{"MM_DL VMixer", NULL, "MM_DL_LP"},
 
@@ -1768,7 +1759,6 @@ static const struct snd_soc_dapm_route intercon[] = {
 	{"DMIC0", NULL, "BE_IN"},
 	{"DMIC1", NULL, "BE_IN"},
 	{"DMIC2", NULL, "BE_IN"},
-	{"VXREC", NULL, "BE_IN"},
 };
 
 static int abe_add_widgets(struct snd_soc_platform *platform)
@@ -1808,7 +1798,7 @@ static int aess_set_opp_mode(void)
 		case 25:
 			abe_set_opp_processing(ABE_OPP25);
 			udelay(250);
-			omap_device_set_rate(&pdev->dev, &pdev->dev, 98304000);
+			omap_device_set_rate(&pdev->dev, &pdev->dev, 49150000);
 			break;
 		case 50:
 		default:
@@ -1821,7 +1811,7 @@ static int aess_set_opp_mode(void)
 		/* Increase OPP mode */
 		switch (opp) {
 		case 25:
-			omap_device_set_rate(&pdev->dev, &pdev->dev, 98304000);
+			omap_device_set_rate(&pdev->dev, &pdev->dev, 49150000);
 			abe_set_opp_processing(ABE_OPP25);
 			break;
 		case 50:
@@ -1836,7 +1826,7 @@ static int aess_set_opp_mode(void)
 		}
 	}
 	abe->opp = opp;
-
+	dev_dbg(&pdev->dev,  "OPP set = %d\n", opp);
 	mutex_unlock(&abe->opp_mutex);
 
 	pm_runtime_put_sync(&pdev->dev);
@@ -1861,6 +1851,8 @@ static int aess_save_context(struct abe_data *abe)
 {
 	struct platform_device *pdev = abe->pdev;
 	struct omap4_abe_dsp_pdata *pdata = pdev->dev.platform_data;
+
+	dev_dbg(&pdev->dev, "saving ABE context\n");
 
 	/* TODO: Find a better way to save/retore gains after OFF mode */
 	abe_mute_gain(MIXSDT, MIX_SDT_INPUT_UP_MIXER);
@@ -1894,9 +1886,6 @@ static int aess_save_context(struct abe_data *abe)
 	abe_mute_gain(GAINS_BTUL, GAIN_LEFT_OFFSET);
 	abe_mute_gain(GAINS_BTUL, GAIN_RIGHT_OFFSET);
 
-	if (pdata->get_context_loss_count)
-		abe->loss_count = pdata->get_context_loss_count(&pdev->dev);
-
 	return 0;
 }
 
@@ -1908,11 +1897,11 @@ static int aess_restore_context(struct abe_data *abe)
 
 	omap_device_set_rate(&pdev->dev, &pdev->dev, 98304000);
 
-	if (pdata->get_context_loss_count)
-		loss_count = pdata->get_context_loss_count(&pdev->dev);
-
-	if  (loss_count != abe->loss_count)
-		abe_reload_fw();
+	/* 
+	 * Force abe fw reload 
+	 * on each context restore call
+	*/
+	abe_reload_fw();
 
 	/* TODO: Find a better way to save/retore gains after dor OFF mode */
 	abe_unmute_gain(MIXSDT, MIX_SDT_INPUT_UP_MIXER);
@@ -1992,6 +1981,7 @@ static int aess_open(struct snd_pcm_substream *substream)
 					 SNDRV_PCM_HW_PARAM_BUFFER_BYTES, 1024);
 		break;
 	default:
+		dev_dbg(&rtd->dev, "%s: Doing Nothing and returning..\n", __func__);
 		break;
 	}
 
@@ -2030,7 +2020,8 @@ static int abe_ping_pong_init(struct snd_pcm_hw_params *params,
 				PING_PONG_WITH_MCU_IRQ);
 
 	/* Memory mapping for hw params */
-	runtime->dma_area  = abe->io_base + ABE_DMEM_BASE_OFFSET_MPU + dst;
+	runtime->dma_area  = abe->io_base + ABE_DMEM_BASE_OFFSET_MPU +
+				ABE_VM_AESS_OFFSET + dst;
 	runtime->dma_addr  = 0;
 	runtime->dma_bytes = period_size * 2;
 
@@ -2049,6 +2040,10 @@ static int aess_hw_params(struct snd_pcm_substream *substream,
 	int ret = 0;
 
 	dev_dbg(&rtd->dev, "%s ID %d\n", __func__, dai->id);
+	dev_dbg(&rtd->dev, "%s dai_name %s\n", __func__, dai->name);
+	dev_dbg(&rtd->dev, "%s be_active %d current_fe %d num_be [%d %d]\n",
+	   __func__, rtd->be_active, rtd->current_fe, rtd->num_be[0], rtd->num_be[1]);
+
 
 	switch (dai->id) {
 	case ABE_FRONTEND_DAI_MODEM:
@@ -2059,6 +2054,7 @@ static int aess_hw_params(struct snd_pcm_substream *substream,
 			return ret;
 		break;
 	default:
+		dev_dbg(&rtd->dev, "%s: Returning without any action..\n", __func__);
 		break;
 	}
 
@@ -2107,28 +2103,18 @@ static int aess_close(struct snd_pcm_substream *substream)
 static int aess_mmap(struct snd_pcm_substream *substream,
 	struct vm_area_struct *vma)
 {
-	struct snd_soc_pcm_runtime *rtd = substream->private_data;
-	struct snd_soc_dai *dai = rtd->cpu_dai;
-	int offset, size, err = 0;
+	int offset, size, err;
 
-	switch (dai->id) {
-	case ABE_FRONTEND_DAI_LP_MEDIA:
-		/* TODO: we may need to check for underrun. */
-		vma->vm_flags |= VM_IO | VM_RESERVED;
-		vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
-		size = vma->vm_end - vma->vm_start;
-		offset = vma->vm_pgoff << PAGE_SHIFT;
+	/* TODO: we may need to check for underrun. */
+	vma->vm_flags |= VM_IO | VM_RESERVED;
+	vma->vm_page_prot = pgprot_writecombine(vma->vm_page_prot);
+	size = vma->vm_end - vma->vm_start;
+	offset = vma->vm_pgoff << PAGE_SHIFT;
 
-		err = io_remap_pfn_range(vma, vma->vm_start,
-				(ABE_DMEM_BASE_ADDRESS_MPU +
-				ABE_DMEM_BASE_OFFSET_PING_PONG +
-				offset) >> PAGE_SHIFT,
-				size, vma->vm_page_prot);
-		break;
-
-	default:
-		break;
-	}
+	err = io_remap_pfn_range(vma, vma->vm_start,
+			(ABE_DMEM_BASE_ADDRESS_MPU +
+			ABE_DMEM_BASE_OFFSET_PING_PONG + offset) >> PAGE_SHIFT,
+			size, vma->vm_page_prot);
 
 	if (err)
 		return -EAGAIN;
@@ -2242,7 +2228,6 @@ static int omap_pm_abe_get_dev_context_loss_count(struct device *dev)
 
 	return ret;
 }
-
 #else
 #define aess_runtime_suspend   NULL
 #define aess_runtime_resume    NULL
@@ -2260,14 +2245,6 @@ static void abe_early_suspend(struct early_suspend *handler)
 	struct abe_data *abe = container_of(handler, struct abe_data,
 					    early_suspend);
 	int active = abe_fe_active_count(abe);
-	u32 reg;
-
-	/* Disable SD for MPU towards EMIF,L3_2 and L4CFG */
-	reg = OMAP4430_MEMIF_STATDEP_MASK | OMAP4430_L3_2_STATDEP_MASK
-		| OMAP4430_L4CFG_STATDEP_MASK;
-
-	cm_rmw_mod_reg_bits(reg, 0, OMAP4430_CM1_MPU_MOD,
-		OMAP4_CM_MPU_STATICDEP_OFFSET);
 
 	/*
 	 * enter dpll cascading when all conditions are met:
@@ -2285,16 +2262,6 @@ static void abe_late_resume(struct early_suspend *handler)
 {
 	struct abe_data *abe = container_of(handler, struct abe_data,
 					    early_suspend);
-	u32 reg, mask;
-
-	/* Enable SD for MPU towards EMIF,L3_2 and L4CFG */
-	reg = 1 << OMAP4430_MEMIF_STATDEP_SHIFT |
-		1 << OMAP4430_L3_2_STATDEP_SHIFT |
-		1 << OMAP4430_L4CFG_STATDEP_SHIFT;
-	mask = OMAP4430_MEMIF_STATDEP_MASK | OMAP4430_L3_2_STATDEP_MASK
-		| OMAP4430_L4CFG_STATDEP_MASK;
-	cm_rmw_mod_reg_bits(mask, reg, OMAP4430_CM1_MPU_MOD,
-		OMAP4_CM_MPU_STATICDEP_OFFSET);
 
 	/* exit dpll cascading since screen will be turned on */
 	dpll_cascading_blocker_hold(&abe->pdev->dev);
@@ -2342,6 +2309,7 @@ static int __devinit abe_engine_probe(struct platform_device *pdev)
 		return -ENODEV;
 
 	pdata->get_context_loss_count = omap_pm_abe_get_dev_context_loss_count;
+	abe->loss_count = 0;
 #endif
 
 	pm_runtime_enable(&pdev->dev);

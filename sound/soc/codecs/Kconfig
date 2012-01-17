@@ -178,6 +178,9 @@ config SND_SOC_TLV320AIC3X
 config SND_SOC_TLV320DAC33
 	tristate
 
+config SND_SOC_TLV320AIC3100
+	tristate "TI TLV320AIC3100 Codec support"
+
 config SND_SOC_TWL4030
 	select TWL4030_CODEC
 	tristate

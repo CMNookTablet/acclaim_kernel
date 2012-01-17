@@ -273,13 +273,15 @@ static void _omap_vram_dma_cb(int lch, u16 ch_status, void *data)
 	complete(compl);
 }
 
-static int _omap_vram_clear(u32 paddr, unsigned pages)
+static int _omap_vram_clear(u32 paddr, unsigned pages, u32 fill)
 {
 	struct completion compl;
 	unsigned elem_count;
 	unsigned frame_count;
 	int r;
 	int lch;
+
+	DBG("Clearing %u pages at 0x%08X", pages, paddr);
 
 	init_completion(&compl);
 
@@ -302,7 +304,7 @@ static int _omap_vram_clear(u32 paddr, unsigned pages)
 	omap_set_dma_dest_params(lch, 0, OMAP_DMA_AMODE_POST_INC,
 			paddr, 0, 0);
 
-	omap_set_dma_color_mode(lch, OMAP_DMA_CONSTANT_FILL, 0x000000);
+	omap_set_dma_color_mode(lch, OMAP_DMA_CONSTANT_FILL, fill);
 
 	omap_start_dma(lch);
 
@@ -357,7 +359,7 @@ found:
 
 		*paddr = start;
 
-		_omap_vram_clear(start, pages);
+		_omap_vram_clear(start, pages, 0x00000000);
 
 		return 0;
 	}
@@ -424,6 +426,43 @@ void omap_vram_get_info(unsigned long *vram,
 	mutex_unlock(&region_mutex);
 }
 EXPORT_SYMBOL(omap_vram_get_info);
+
+void omap_vram_clear(unsigned long paddr, size_t size, u32 fill)
+{
+	mutex_lock(&region_mutex);
+	_omap_vram_clear(paddr, size >> PAGE_SHIFT, fill);
+	mutex_unlock(&region_mutex);
+}
+EXPORT_SYMBOL(omap_vram_clear);
+
+void omap_vram_clear_free(u32 fill)
+{
+	struct vram_region *vr;
+	struct vram_alloc *va;
+
+	mutex_lock(&region_mutex);
+
+	list_for_each_entry(vr, &region_list, list) {
+		unsigned long pa;
+
+		pa = vr->paddr;
+
+		list_for_each_entry(va, &vr->alloc_list, list) {
+			if (va->paddr - pa) {
+				_omap_vram_clear(pa, (va->paddr - pa) >> PAGE_SHIFT, fill);
+			}
+
+			pa = va->paddr + (va->pages << PAGE_SHIFT);
+		}
+
+		if (vr->paddr + (vr->pages << PAGE_SHIFT) - pa) {
+			_omap_vram_clear(pa, (vr->paddr + (vr->pages << PAGE_SHIFT) - pa) >> PAGE_SHIFT, fill);
+		}
+	}
+
+	mutex_unlock(&region_mutex);
+}
+EXPORT_SYMBOL(omap_vram_clear_free);
 
 #if defined(CONFIG_DEBUG_FS)
 static int vram_debug_show(struct seq_file *s, void *unused)

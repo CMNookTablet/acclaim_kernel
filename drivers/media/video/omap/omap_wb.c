@@ -1173,7 +1173,7 @@ static int omap_wb_remove(struct platform_device *pdev)
 	return 0;
 }
 
-static int __init omap_wb_probe(struct platform_device *pdev)
+static int __devinit omap_wb_probe(struct platform_device *pdev)
 {
 	int r = 0;
 	struct omap2wb_device *wb_dev = NULL;

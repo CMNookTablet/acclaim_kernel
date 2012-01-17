@@ -291,6 +291,9 @@ void dss_overlay_setup_dispc_manager(struct omap_overlay_manager *mgr);
 void dss_overlay_setup_l4_manager(struct omap_overlay_manager *mgr);
 #endif
 void dss_recheck_connections(struct omap_dss_device *dssdev, bool force);
+int omap_dss_ovl_set_info(struct omap_overlay *ovl,
+               struct omap_overlay_info *info);
+
 /* Write back */
 void dss_init_writeback(struct platform_device *pdev);
 bool omap_dss_check_wb(struct writeback_cache_data *wb,
@@ -460,6 +463,9 @@ void dispc_set_burst_size(enum omap_plane plane,
 void dispc_set_zorder(enum omap_plane plane,
 		enum omap_overlay_zorder zorder);
 void dispc_enable_zorder(enum omap_plane plane, bool enable);
+void dispc_enable_cpr(enum omap_channel channel, bool enable);
+void dispc_set_cpr_coef(enum omap_channel channel,
+		struct omap_dss_cpr_coefs *coefs);
 
 void dispc_set_plane_ba0(enum omap_plane plane, u32 paddr);
 void dispc_set_plane_ba1(enum omap_plane plane, u32 paddr);
@@ -520,6 +526,7 @@ void dispc_get_trans_key(enum omap_channel ch,
 		u32 *trans_key);
 void dispc_enable_trans_key(enum omap_channel ch, bool enable);
 void dispc_enable_alpha_blending(enum omap_channel ch, bool enable);
+int  dispc_enable_gamma(enum omap_channel ch, u8 gamma_value);
 bool dispc_trans_key_enabled(enum omap_channel ch);
 bool dispc_alpha_blending_enabled(enum omap_channel ch);
 

@@ -120,6 +120,8 @@ struct otg_transceiver {
 	/* start or continue HNP role switch */
 	int	(*start_hnp)(struct otg_transceiver *otg);
 
+	/* start or continue HNP role switch */
+	int	(*get_link_status)(struct otg_transceiver *otg);
 };
 
 
@@ -268,6 +270,16 @@ static inline void
 otg_unregister_notifier(struct otg_transceiver *otg, struct notifier_block *nb)
 {
 	blocking_notifier_chain_unregister(&otg->notifier, nb);
+}
+
+/* notifiers */
+static inline int
+otg_get_link_status(struct otg_transceiver *otg)
+{
+	if (otg->get_link_status != NULL)
+		return otg->get_link_status(otg);
+	else
+		return 0;
 }
 
 /* for OTG controller drivers (and maybe other stuff) */

@@ -11,8 +11,9 @@
 #ifndef _BOARD_4430SDP_WIFI_H
 #define _BOARD_4430SDP_WIFI_H
 
-#define SDP4430_WIFI_PMENA_GPIO  54
-#define SDP4430_WIFI_IRQ_GPIO    53
+#define SDP4430_WIFI_PWEN_GPIO   114
+#define SDP4430_WIFI_PMENA_GPIO  118
+#define SDP4430_WIFI_IRQ_GPIO    115
 
 void config_wlan_mux(void);
 

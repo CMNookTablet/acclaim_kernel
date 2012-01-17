@@ -82,6 +82,8 @@ struct omap_opp_def {
 
 #ifdef CONFIG_PM
 
+extern struct mutex opp_mutex;
+
 unsigned long opp_get_voltage(const struct omap_opp *opp);
 
 unsigned long opp_get_freq(const struct omap_opp *opp);
@@ -123,6 +125,9 @@ void opp_exit_cpufreq_table(struct cpufreq_frequency_table **table);
 struct device **opp_init_voltage_params(struct voltagedomain *voltdm,
 					int *dev_count);
 #else
+
+#define opp_mutex
+
 static inline unsigned long opp_get_voltage(const struct omap_opp *opp)
 {
 	return 0;

@@ -227,10 +227,74 @@
 #define HIGH_PERF_SQ			(1 << 3)
 #define CK32K_LOWPWR_EN			(1 << 7)
 
-#define CLK32KG_CFG_STATE	0xBE
+#define CLK32KG_CFG_GRP		0xbc
+#define CLK32KG_CFG_STATE	0xbe
+#define CLK32KG_CFG_TRANS	0xbd
 
-#define CLK32KG_CFG_STATE	0xBE
 
+#define PHOENIX_MSK_TRANSITION 0x20
+
+#define VMEM_CFG_GRP 0x64
+#define VMEM_CFG_TRANS 0x65
+#define VMEM_CFG_STATE 0x66
+#define VMEM_CFG_VOLTAGE 0x68
+
+#define V1V29_CFG_GRP 0x40
+#define V1V29_CFG_TRANS 0x41
+#define V1V29_CFG_STATE 0x42
+#define V1V29_CFG_VOLTAGE 0x44
+
+#define V2V1_CFG_GRP 0x4c
+#define V2V1_CFG_TRANS 0x4d
+#define V2V1_CFG_STATE 0x4e
+#define V2V1_CFG_VOLTAGE 0x50
+
+#define VMEM_CFG_GRP 0x64
+#define VMEM_CFG_TRANS 0x65
+#define VMEM_CFG_STATE 0x66
+#define VMEM_CFG_VOLTAGE 0x68
+
+#define VAUX1_CFG_GRP 0x84
+#define VAUX1_CFG_TRANS 0x85
+#define VAUX1_CFG_STATE 0x86
+#define VAUX1_CFG_VOLTAGE 0x87
+
+#define VUSB_CFG_GRP 0xa0
+#define VUSB_CFG_TRANS 0xa1
+#define VUSB_CFG_STATE 0xa2
+#define VUSB_CFG_VOLTAGE 0xa3
+
+#define VAUX2_CFG_GRP 0x88
+#define VAUX2_CFG_TRANS 0x89
+#define VAUX2_CFG_STATE 0x8a
+#define VAUX2_CFG_VOLTAGE 0x8b
+
+#define VAUX3_CFG_GRP 0x8c
+#define VAUX3_CFG_TRANS 0X8d
+#define VAUX3_CFG_STATE 0x8e
+#define VAUX3_CFG_VOLTAGE 0x8f
+
+#define VCXIO_CFG_GRP 0x90
+#define VCXIO_CFG_TRANS 0x91
+#define VCXIO_CFG_STATE 0x92
+#define VCXIO_CFG_VOLTAGE 0x93
+
+#define VDAC_CFG_GRP 0x94
+#define VDAC_CFG_TRANS 0x95
+#define VDAC_CFG_STATE 0x96
+#define VDAC_CFG_VOLTAGE 0x97
+
+#define VMMC_CFG_GRP 0x98
+#define VMMC_CFG_TRANS 0x99
+#define VMMC_CFG_STATE 0x9a
+#define VMMC_CFG_VOLTAGE 0x9b
+
+#define VUSIM_CFG_GRP 0xa4
+#define VUSIM_CFG_TRANS 0xa5
+#define VUSIM_CFG_STATE 0xa6
+#define VUSIM_CFG_VOLTAGE 0xa7
+
+#define BBSPOR_CFG 0xe6
 
 /* chip-specific feature flags, for i2c_device_id.driver_data */
 #define TWL4030_VAUX2		BIT(0)	/* pre-5030 voltage ranges */
@@ -911,6 +975,10 @@ add_children(struct twl4030_platform_data *pdata, unsigned long features)
 		child = add_regulator(TWL6030_REG_VAUX3_6030, pdata->vaux3);
 		if (IS_ERR(child))
 			return PTR_ERR(child);
+
+		child = add_regulator(TWL6030_REG_CLK32KG, pdata->clk32kg);
+		if (IS_ERR(child))
+			return PTR_ERR(child);
 	}
 
 	return 0;
@@ -1031,16 +1099,11 @@ static int __devexit twl_remove(struct i2c_client *client)
 
 static void _init_twl6030_settings(void)
 {
-	/* unmask PREQ transition */
-	twl_i2c_write_u8(TWL6030_MODULE_ID0, 0xC0, 0x02);
-
 	/* USB_VBUS_CTRL_CLR */
 	twl_i2c_write_u8(TWL6030_MODULE_ID1, 0xFF, 0x05);
 	/* USB_ID_CRTL_CLR */
 	twl_i2c_write_u8(TWL6030_MODULE_ID1, 0xFF, 0x07);
 
-	/* GPADC_CTRL */
-	twl_i2c_write_u8(TWL6030_MODULE_ID1, 0x00, 0x2E);
 	/* TOGGLE1 */
 	twl_i2c_write_u8(TWL6030_MODULE_ID1, 0x51, 0x90);
 	/* MISC1 */
@@ -1052,7 +1115,7 @@ static void _init_twl6030_settings(void)
 	 * BBSPOR_CFG - Disable BB charging. It should be
 	 * taken care by proper driver
 	 */
-	twl_i2c_write_u8(TWL6030_MODULE_ID0, 0x62, 0xE6);
+	twl_i2c_write_u8(TWL6030_MODULE_ID0, 0x72, BBSPOR_CFG);
 	/* CFG_INPUT_PUPD2 */
 	twl_i2c_write_u8(TWL6030_MODULE_ID0, 0x65, 0xF1);
 	/* CFG_INPUT_PUPD4 */
@@ -1061,16 +1124,6 @@ static void _init_twl6030_settings(void)
 	twl_i2c_write_u8(TWL6030_MODULE_ID0, 0x00, 0xF5);
 	/* CHARGERUSB_CTRL3 */
 	twl_i2c_write_u8(TWL6030_MODULE_ID1, 0x21, 0xEA);
-
-	/* SYSEN_CFG_TRANS */
-	twl_i2c_write_u8(TWL6030_MODULE_ID0, 0x01, 0xB3);
-	twl_i2c_write_u8(TWL6030_MODULE_ID0, 0x01, 0xB4);
-	twl_i2c_write_u8(TWL6030_MODULE_ID0, 0x20, 0xB5);
-
-	/* TMP */
-	twl_i2c_write_u8(TWL6030_MODULE_ID0, 0x01, 0xCE);
-	twl_i2c_write_u8(TWL6030_MODULE_ID0, 0x01, 0xCF);
-	twl_i2c_write_u8(TWL6030_MODULE_ID0, 0x20, 0xD0);
 
 	/* VBATMIN_HI */
 	twl_i2c_write_u8(TWL6030_MODULE_ID0, 0x00, 0xC9);
@@ -1192,8 +1245,53 @@ twl_probe(struct i2c_client *client, const struct i2c_device_id *id)
 	}
 
 	if (twl_class_is_6030()) {
-		twl_i2c_write_u8(TWL6030_MODULE_ID0, 0xE1, CLK32KG_CFG_STATE);
-		/* Remove unwanted settings on twl chip as part of twl init. */
+
+		// Keep clk32kg enable in sleep mode
+		twl_i2c_write_u8(TWL6030_MODULE_ID0, 0x05, CLK32KG_CFG_TRANS);
+
+		// unmask PREQ1 transition
+		twl_i2c_write_u8(TWL6030_MODULE_ID0, 0xc0, PHOENIX_MSK_TRANSITION);
+
+		// low power rtc mode in off and sleep
+		twl_i2c_write_u8(TWL6030_MODULE_ID0, 0x72, BBSPOR_CFG);
+
+		// VCXIO set ASM mode
+		twl_i2c_write_u8(TWL6030_MODULE_ID0, 0x01, VCXIO_CFG_TRANS);
+
+		// VADC disable
+		twl_i2c_write_u8(TWL6030_MODULE_ID0, 0x00, VDAC_CFG_GRP);
+		twl_i2c_write_u8(TWL6030_MODULE_ID0, 0x00, VDAC_CFG_TRANS);
+		twl_i2c_write_u8(TWL6030_MODULE_ID0, 0x00, VDAC_CFG_STATE);
+
+		// VAUX2 (VPROX) disable
+		twl_i2c_write_u8(TWL6030_MODULE_ID0, 0x00, VAUX2_CFG_GRP);
+		twl_i2c_write_u8(TWL6030_MODULE_ID0, 0x00, VAUX2_CFG_TRANS);
+		twl_i2c_write_u8(TWL6030_MODULE_ID0, 0x00, VAUX2_CFG_STATE);
+
+		// VUSIM disable
+		twl_i2c_write_u8(TWL6030_MODULE_ID0, 0x00, VUSIM_CFG_GRP);
+		twl_i2c_write_u8(TWL6030_MODULE_ID0, 0x00, VUSIM_CFG_TRANS);
+		twl_i2c_write_u8(TWL6030_MODULE_ID0, 0x00, VUSIM_CFG_STATE);
+
+		// V2V1 disable
+		twl_i2c_write_u8(TWL6030_MODULE_ID0, 0x00, V2V1_CFG_GRP);
+		twl_i2c_write_u8(TWL6030_MODULE_ID0, 0x00, V2V1_CFG_TRANS);
+		twl_i2c_write_u8(TWL6030_MODULE_ID0, 0x00, V2V1_CFG_STATE);
+
+
+		// SYSEN_CFG_TRANS  - SYSEN not used
+		twl_i2c_write_u8(TWL6030_MODULE_ID0, 0x00, 0xB3);
+		twl_i2c_write_u8(TWL6030_MODULE_ID0, 0x00, 0xB4);
+		twl_i2c_write_u8(TWL6030_MODULE_ID0, 0x00, 0xB5);
+
+		/* GPADC_CTRL */
+		twl_i2c_write_u8(TWL6030_MODULE_ID1, 0x00, 0x2E);
+
+		/* TMP */
+		twl_i2c_write_u8(TWL6030_MODULE_ID0, 0x01, 0xCE);
+		twl_i2c_write_u8(TWL6030_MODULE_ID0, 0x01, 0xCF);
+		twl_i2c_write_u8(TWL6030_MODULE_ID0, 0x20, 0xD0);
+
 		_init_twl6030_settings();
 	}
 

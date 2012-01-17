@@ -261,6 +261,7 @@ static ssize_t display_timings_store(struct device *dev,
 	if (r)
 		return r;
 
+	// prevent user space from changing timings
 	dssdev->driver->set_timings(dssdev, &t);
 
 	return size;

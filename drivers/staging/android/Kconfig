@@ -25,6 +25,11 @@ config ANDROID_RAM_CONSOLE_ENABLE_VERBOSE
 	default y
 	depends on ANDROID_RAM_CONSOLE
 
+config ANDROID_RAM_CONSOLE_PANIC
+	bool "Log kernel panics using the kmsg_dumper interface"
+	default n
+	depends on ANDROID_RAM_CONSOLE
+
 menuconfig ANDROID_RAM_CONSOLE_ERROR_CORRECTION
 	bool "Android RAM Console Enable error correction"
 	default n

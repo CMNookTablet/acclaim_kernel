@@ -1120,10 +1120,28 @@ static s32 refill_pat(struct tmm *tmm, struct tcm_area *area, u32 *ptr)
 	return res;
 }
 
+static u32 virt2phys(u32 usr)
+{
+	pmd_t *pmd;
+	pte_t *ptep;
+	pgd_t *pgd = pgd_offset(current->mm, usr);
+	if (pgd_none(*pgd) || pgd_bad(*pgd))
+		return 0;
+	pmd = pmd_offset(pgd, arg);
+	if (pmd_none(*pmd) || pmd_bad(*pmd))
+		return 0;
+
+	ptep = pte_offset_map(pmd, usr);
+	if (ptep && pte_present(*ptep))
+		return (*ptep & PAGE_MASK) | (~PAGE_MASK & usr);
+
+	return 0;
+}
+
 static s32 map_block(enum tiler_fmt fmt, u32 width, u32 height, u32 gid,
 			struct process_info *pi, u32 *sys_addr, u32 usr_addr)
 {
-	u32 i = 0, tmp = -1, *mem = NULL;
+	u32 i = 0, tmp = -1, *mem = NULL, use_gp = 1;
 	u8 write = 0;
 	s32 res = -ENOMEM;
 	struct mem_info *mi = NULL;
@@ -1204,19 +1222,29 @@ static s32 map_block(enum tiler_fmt fmt, u32 width, u32 height, u32 gid,
 
 	tmp = mi->usr;
 	for (i = 0; i < mi->num_pg; i++) {
-		if (get_user_pages(curr_task, mm, tmp, 1, write, 1, &page,
-									NULL)) {
+		/*
+		 * At first use get_user_pages which works best for
+		 * userspace buffers.  If it fails (e.g. for kernel
+		 * allocated buffers), fall back to using the page
+		 * table directly.
+		 */
+		if (use_gp && get_user_pages(curr_task, mm, tmp, 1, write, 1,
+							&page, NULL) && page) {
 			if (page_count(page) < 1) {
 				printk(KERN_ERR "Bad page count from"
 							"get_user_pages()\n");
 			}
 			mi->pg_ptr[i] = (u32)page;
 			mem[i] = page_to_phys(page);
-			tmp += PAGE_SIZE;
 		} else {
-			printk(KERN_ERR "get_user_pages() failed\n");
-			goto fault;
+			use_gp = mi->pg_ptr[i] = 0;
+			mem[i] = virt2phys(tmp);
+			if (!mem[i]) {
+				printk(KERN_ERR "get_user_pages() failed and virtual address is not in page table\n");
+				goto fault;
+			}
 		}
+		tmp += PAGE_SIZE;
 	}
 	up_read(&mm->mmap_sem);
 
@@ -1370,9 +1398,6 @@ static s32 alloc_block(enum tiler_fmt fmt, u32 width, u32 height,
 static s32 tiler_ioctl(struct inode *ip, struct file *filp, u32 cmd,
 			unsigned long arg)
 {
-	pgd_t *pgd = NULL;
-	pmd_t *pmd = NULL;
-	pte_t *ptep = NULL, pte = 0x0;
 	s32 r = -1;
 	u32 til_addr = 0x0;
 	struct process_info *pi = filp->private_data;
@@ -1427,21 +1452,7 @@ static s32 tiler_ioctl(struct inode *ip, struct file *filp, u32 cmd,
 		break;
 
 	case TILIOC_GSSP:
-		pgd = pgd_offset(current->mm, arg);
-		if (!(pgd_none(*pgd) || pgd_bad(*pgd))) {
-			pmd = pmd_offset(pgd, arg);
-			if (!(pmd_none(*pmd) || pmd_bad(*pmd))) {
-				ptep = pte_offset_map(pmd, arg);
-				if (ptep) {
-					pte = *ptep;
-					if (pte_present(pte))
-						return (pte & PAGE_MASK) |
-							(~PAGE_MASK & arg);
-				}
-			}
-		}
-		/* va not in page table */
-		return 0x0;
+		return virt2phys(arg);
 		break;
 	case TILIOC_MBUF:
 		if (copy_from_user(&block_info, (void __user *)arg,

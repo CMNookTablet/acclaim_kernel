@@ -66,6 +66,7 @@ static int try_to_freeze_tasks(bool sig_only)
 		} while_each_thread(g, p);
 		read_unlock(&tasklist_lock);
 		if (todo && has_wake_lock(WAKE_LOCK_SUSPEND)) {
+			dump_active_locks(WAKE_LOCK_SUSPEND);
 			wakeup = 1;
 			break;
 		}

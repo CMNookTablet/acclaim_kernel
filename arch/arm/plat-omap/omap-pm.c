@@ -316,7 +316,7 @@ int omap_pm_set_min_bus_tput(struct device *dev, u8 agent_id, long r)
 	ret = omap_device_set_rate(&dummy_l3_dev, l3_dev, target_level);
 
 	if (ret)
-		pr_err("Unable to change level for interconnect bandwidth to %ld\n",
+		pr_debug("Unable to change level for interconnect bandwidth to %ld\n",
 			target_level);
 unlock:
 	mutex_unlock(&bus_tput_mutex);

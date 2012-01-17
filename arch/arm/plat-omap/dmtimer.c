@@ -222,10 +222,13 @@ static inline u32 omap_dm_timer_read_reg(struct omap_dm_timer *timer, u32 reg)
 	struct dmtimer_platform_data *pdata = timer->pdev->dev.platform_data;
 	int i = 0;
 
-	if (reg >= OMAP_TIMER_WAKEUP_EN_REG)
-		reg += pdata->func_offset;
-	else if (reg >= OMAP_TIMER_STAT_REG)
-		reg += pdata->intr_offset;
+	if (reg != OMAP_TIMER_INT_CLR_REG)
+	{
+		if (reg >= OMAP_TIMER_WAKEUP_EN_REG)
+			reg += pdata->func_offset;
+		else if (reg >= OMAP_TIMER_STAT_REG)
+			reg += pdata->intr_offset;
+	}
 
 	if (timer->posted) {
 		omap_test_timeout(!(readl(timer->io_base +
@@ -254,10 +257,13 @@ static void omap_dm_timer_write_reg(struct omap_dm_timer *timer, u32 reg,
 	struct dmtimer_platform_data *pdata = timer->pdev->dev.platform_data;
 	int i = 0;
 
-	if (reg >= OMAP_TIMER_WAKEUP_EN_REG)
-		reg += pdata->func_offset;
-	else if (reg >= OMAP_TIMER_STAT_REG)
-		reg += pdata->intr_offset;
+	if (reg != OMAP_TIMER_INT_CLR_REG)
+	{
+		if (reg >= OMAP_TIMER_WAKEUP_EN_REG)
+			reg += pdata->func_offset;
+		else if (reg >= OMAP_TIMER_STAT_REG)
+			reg += pdata->intr_offset;
+	}
 
 	if (timer->posted) {
 		omap_test_timeout(!(readl(timer->io_base +
@@ -631,14 +637,28 @@ void omap_dm_timer_set_match(struct omap_dm_timer *timer, int enable,
 	u32 l;
 
 	l = omap_dm_timer_read_reg(timer, OMAP_TIMER_CTRL_REG);
-	if (enable)
-		l |= OMAP_TIMER_CTRL_CE;
-	else
-		l &= ~OMAP_TIMER_CTRL_CE;
-	omap_dm_timer_write_reg(timer, OMAP_TIMER_CTRL_REG, l);
+	if (enable) {
+		if (!(l & OMAP_TIMER_CTRL_CE)) {
+			l |= OMAP_TIMER_CTRL_CE;
+			omap_dm_timer_write_reg(timer, OMAP_TIMER_CTRL_REG, l);
+		}
+	} else {
+		if (l & OMAP_TIMER_CTRL_CE) {
+			l &= ~OMAP_TIMER_CTRL_CE;
+			omap_dm_timer_write_reg(timer, OMAP_TIMER_CTRL_REG, l);
+		}
+	}
+
 	omap_dm_timer_write_reg(timer, OMAP_TIMER_MATCH_REG, match);
 }
 EXPORT_SYMBOL_GPL(omap_dm_timer_set_match);
+
+unsigned int omap_dm_timer_get_match(struct omap_dm_timer *timer)
+{
+	return omap_dm_timer_read_reg(timer, OMAP_TIMER_MATCH_REG);
+}
+
+EXPORT_SYMBOL_GPL(omap_dm_timer_get_match);
 
 void omap_dm_timer_set_pwm(struct omap_dm_timer *timer, int def_on,
 			   int toggle, int trigger)
@@ -685,6 +705,8 @@ void omap_dm_timer_set_int_disable(struct omap_dm_timer *timer,
 {
 	u32 l;
 	struct dmtimer_platform_data *pdata = timer->pdev->dev.platform_data;
+
+	omap_dm_timer_enable(timer);
 
 	l = omap_dm_timer_read_reg(timer, OMAP_TIMER_WAKEUP_EN_REG);
 	if (pdata->timer_ip_type == OMAP_TIMER_IP_VERSION_2) {

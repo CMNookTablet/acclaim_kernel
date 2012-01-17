@@ -199,9 +199,12 @@ config TWL6030_PWM
 	  Say yes here if you want support for TWL6030 PWM.
 	  This is used to control charging LED brightness.
 
-config TWL6030_POWEROFF
-	bool "TWL6030 device poweroff"
+config TWL6030_POWER
+	bool "TWL6030 device power"
 	depends on TWL4030_CORE
+	help
+	  Enables TWL6030 power off function and interrogation
+	  of boot cause.
 
 config TWL6030_GPADC
 	tristate "TWL6030 GPADC (General Purpose A/D Convertor) Support"

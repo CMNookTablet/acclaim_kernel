@@ -32,6 +32,8 @@
 #include <linux/notifier.h>
 #include <linux/slab.h>
 #include <linux/wakelock.h>
+#include <linux/power_supply.h>
+#include <plat/usb.h>
 
 /* usb register definitions */
 #define USB_VENDOR_ID_LSB		0x00
@@ -102,13 +104,18 @@ struct twl6030_usb {
 
 	int			irq1;
 	int			irq2;
+	unsigned int		usb_cinlimit_mA;
+	unsigned int		charger_type;
 	u8			linkstat;
 	u8			asleep;
+	u8			prev_vbus;
 	bool			irq_enabled;
+	struct wake_lock chrg_lock;
 };
 
 #define xceiv_to_twl(x)		container_of((x), struct twl6030_usb, otg);
 static struct wake_lock twl_lock;
+
 /*-------------------------------------------------------------------------*/
 
 static inline int twl6030_writeb(struct twl6030_usb *twl, u8 module,
@@ -258,36 +265,60 @@ static DEVICE_ATTR(vbus, 0444, twl6030_usb_vbus_show, NULL);
 static irqreturn_t twl6030_usb_irq(int irq, void *_twl)
 {
 	struct twl6030_usb *twl = _twl;
-	int status;
+	int status = 0;
 	u8 vbus_state, hw_state;
 
 	hw_state = twl6030_readb(twl, TWL6030_MODULE_ID0, STS_HW_CONDITIONS);
 
 	vbus_state = twl6030_readb(twl, TWL_MODULE_MAIN_CHARGE,
 						CONTROLLER_STAT1);
-	if (!(hw_state & STS_USB_ID)) {
-		if (vbus_state & VBUS_DET) {
-			twl6030_usb_ldo_init(twl);
-			regulator_enable(twl->usb3v3);
-			twl->asleep = 1;
+	vbus_state = vbus_state & VBUS_DET;
+
+	/* Ignore charger events other than VBUS */
+	if (vbus_state == twl->prev_vbus)
+		return IRQ_HANDLED;
+
+	/* Ignore VBUS when in BOOST mode */
+	if ((vbus_state) && !(hw_state & STS_USB_ID)) {
+		twl6030_usb_ldo_init(twl);
+		regulator_enable(twl->usb3v3);
+		twl->asleep = 1;
+		wake_lock(&twl->chrg_lock);
+		twl->charger_type = omap4_charger_detect();
+		if (twl->charger_type == POWER_SUPPLY_TYPE_USB) {
 			status = USB_EVENT_VBUS;
 			twl->otg.default_a = false;
 			twl->otg.state = OTG_STATE_B_IDLE;
 			twl->linkstat = status;
-			blocking_notifier_call_chain(&twl->otg.notifier,
-						status, twl->otg.gadget);
-		} else {
-			status = USB_EVENT_NONE;
+		} else if ((twl->charger_type == POWER_SUPPLY_TYPE_USB_DCP)
+			|| (twl->charger_type == POWER_SUPPLY_TYPE_USB_CDP)) {
+			status = USB_EVENT_CHARGER;
+			twl->usb_cinlimit_mA = 1800;
 			twl->linkstat = status;
-			blocking_notifier_call_chain(&twl->otg.notifier,
-						status, twl->otg.gadget);
-			if (twl->asleep) {
-				regulator_disable(twl->usb3v3);
-				twl->asleep = 0;
-			}
-			wake_lock_timeout(&twl_lock,1*HZ);
+		} else {
+			twl->prev_vbus = vbus_state;
+			sysfs_notify(&twl->dev->kobj, NULL, "vbus");
+			twl->linkstat = status;
+			return IRQ_HANDLED;
 		}
+
+		blocking_notifier_call_chain(&twl->otg.notifier,
+					status, &twl->charger_type);
 	}
+	if (!vbus_state) {
+		status = USB_EVENT_NONE;
+		printk("\n usb unplugged!\n");
+		twl->linkstat = status;
+		blocking_notifier_call_chain(&twl->otg.notifier,
+					status, twl->otg.gadget);
+		if (twl->asleep) {
+			regulator_disable(twl->usb3v3);
+			twl->asleep = 0;
+		}
+		wake_lock_timeout(&twl_lock, 1*HZ);
+		wake_unlock(&twl->chrg_lock);
+	}
+	twl->prev_vbus = vbus_state;
 	sysfs_notify(&twl->dev->kobj, NULL, "vbus");
 
 	return IRQ_HANDLED;
@@ -362,6 +393,13 @@ static int twl6030_enable_irq(struct otg_transceiver *x)
 	return 0;
 }
 
+unsigned int twl6030_get_usb_max_power(struct otg_transceiver *x)
+{
+	struct twl6030_usb *twl = xceiv_to_twl(x);
+
+	return twl->usb_cinlimit_mA;
+}
+
 static int twl6030_set_hz_mode(struct otg_transceiver *x, bool enabled)
 {
 	u8 val;
@@ -404,6 +442,23 @@ static int twl6030_set_vbus(struct otg_transceiver *x, bool enabled)
 	return 0;
 }
 
+static int twl6030_set_power(struct otg_transceiver *x, unsigned int mA)
+{
+	struct twl6030_usb *twl = xceiv_to_twl(x);
+
+	twl->usb_cinlimit_mA = mA;
+	blocking_notifier_call_chain(&twl->otg.notifier, USB_EVENT_ENUMERATED,
+				&twl->usb_cinlimit_mA);
+	return 0;
+}
+
+static int twl6030_get_link_status(struct otg_transceiver *x)
+{
+    struct twl6030_usb *twl = xceiv_to_twl(x);
+
+    return twl->linkstat;
+}
+
 static int twl6030_set_host(struct otg_transceiver *x, struct usb_bus *host)
 {
 	struct twl6030_usb *twl;
@@ -438,11 +493,12 @@ static int __devinit twl6030_usb_probe(struct platform_device *pdev)
 	twl->otg.set_host	= twl6030_set_host;
 	twl->otg.set_peripheral	= twl6030_set_peripheral;
 	twl->otg.set_vbus	= twl6030_set_vbus;
+	twl->otg.set_power	= twl6030_set_power;
 	twl->otg.set_hz_mode	= twl6030_set_hz_mode;
 	twl->otg.init		= twl6030_phy_init;
 	twl->otg.shutdown	= twl6030_phy_shutdown;
 	twl->otg.enable_irq	= twl6030_enable_irq;
-
+	twl->otg.get_link_status = twl6030_get_link_status;
 
 	/*We need to make sure ID comparator is ON*/
 	twl6030_writeb(twl, TWL6030_MODULE_ID0 , 0x1, TWL6030_BACKUP_REG);
@@ -486,8 +542,9 @@ static int __devinit twl6030_usb_probe(struct platform_device *pdev)
 
 	twl->asleep = 0;
 	pdata->phy_init(dev);
-	twl6030_enable_irq(&twl->otg);
 	dev_info(&pdev->dev, "Initialized TWL6030 USB module\n");
+	wake_lock_init(&twl->chrg_lock, WAKE_LOCK_SUSPEND, "charger_wake_lock");
+	twl6030_usb_irq(twl->irq2, twl);
 
 	return 0;
 }
@@ -506,6 +563,7 @@ static int __exit twl6030_usb_remove(struct platform_device *pdev)
 			REG_INT_MSK_STS_C);
 	free_irq(twl->irq1, twl);
 	free_irq(twl->irq2, twl);
+	wake_lock_destroy(&twl->chrg_lock);
 	regulator_put(twl->usb3v3);
 	pdata->phy_exit(twl->dev);
 	device_remove_file(twl->dev, &dev_attr_vbus);

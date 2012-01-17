@@ -773,8 +773,13 @@ int snd_soc_pcm_close(struct snd_pcm_substream *substream)
 	/* Muting the DAC suppresses artifacts caused during digital
 	 * shutdown, for example from stopping clocks.
 	 */
-	if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK)
+	/* MISTRAL : modified the following if condtion to check
+	*  for record stream also
+	*/
+	if ((substream->stream == SNDRV_PCM_STREAM_PLAYBACK) ||
+	   (substream->stream != SNDRV_PCM_STREAM_PLAYBACK)) {
 		snd_soc_dai_digital_mute(codec_dai, 1);
+	}
 
 	if (cpu_dai->driver->ops->shutdown)
 		cpu_dai->driver->ops->shutdown(substream, cpu_dai);
@@ -790,15 +795,23 @@ int snd_soc_pcm_close(struct snd_pcm_substream *substream)
 	cpu_dai->runtime = NULL;
 
 	if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK) {
-		if (rtd->dai_link->dynamic)
+		if (rtd->dai_link->dynamic) {
+			/*printk (KERN_INFO "RTD Dynamic snd_pcm_close...\n");*/
 			snd_soc_dapm_stream_event(rtd, SNDRV_PCM_STREAM_PLAYBACK,
 					cpu_dai->driver->playback.stream_name,
 					SND_SOC_DAPM_STREAM_STOP);
+		}
 
 		/* start delayed pop wq here for playback streams */
+		/*
 		codec_dai->pop_wait = 1;
 		schedule_delayed_work(&rtd->delayed_work,
-			msecs_to_jiffies(rtd->pmdown_time));
+			msecs_to_jiffies(0));*/
+		/*	msecs_to_jiffies(rtd->pmdown_time));*/
+		snd_soc_dapm_stream_event(rtd, SNDRV_PCM_STREAM_PLAYBACK,
+			codec_dai->driver->playback.stream_name,
+			SND_SOC_DAPM_STREAM_STOP);
+
 	} else {
 		/* capture streams can be powered down now */
 		if (rtd->dai_link->dynamic)
@@ -869,9 +882,10 @@ int snd_soc_pcm_prepare(struct snd_pcm_substream *substream)
 	}
 
 	/* cancel any delayed stream shutdown that is pending */
-	if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK &&
-	    codec_dai->pop_wait) {
-		codec_dai->pop_wait = 0;
+	/* MISTRAL : modified the condition check for record also */
+	if (((substream->stream == SNDRV_PCM_STREAM_PLAYBACK) ||
+		(substream->stream != SNDRV_PCM_STREAM_PLAYBACK))  &&
+		codec_dai->pop_wait == 0) {
 		cancel_delayed_work(&rtd->delayed_work);
 	}
 
@@ -1355,6 +1369,7 @@ static void soc_resume_deferred(struct work_struct *work)
 
 	/* userspace can access us now we are back as we were before */
 	snd_power_change_state(card->snd_card, SNDRV_CTL_POWER_D0);
+	wake_unlock(&card->resume_wake_lock);
 }
 
 /* powers up audio subsystem after a suspend */
@@ -1378,6 +1393,7 @@ static int soc_resume(struct device *dev)
 		}
 	}
 	dev_dbg(dev, "Scheduling resume work\n");
+	wake_lock(&card->resume_wake_lock);
 	if (!schedule_work(&card->deferred_resume_work))
 		dev_err(dev, "resume work item may be lost\n");
 
@@ -1795,6 +1811,7 @@ static void snd_soc_instantiate_card(struct snd_soc_card *card)
 	card->snd_card->dev = card->dev;
 
 #ifdef CONFIG_PM
+	wake_lock_init(&card->resume_wake_lock, WAKE_LOCK_SUSPEND, "soc-audio");
 	/* deferred resume work */
 	INIT_WORK(&card->deferred_resume_work, soc_resume_deferred);
 #endif

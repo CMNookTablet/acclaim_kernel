@@ -21,6 +21,7 @@
 #include <linux/string.h>
 #include <linux/uaccess.h>
 #include <linux/io.h>
+#include <linux/kmsg_dump.h>
 
 #ifdef CONFIG_ANDROID_RAM_CONSOLE_ERROR_CORRECTION
 #include <linux/rslib.h>
@@ -221,6 +222,18 @@ ram_console_save_old(struct ram_console_buffer *buffer, char *dest)
 #endif
 }
 
+#ifdef CONFIG_ANDROID_RAM_CONSOLE_PANIC
+static struct kmsg_dumper ram_dumper;
+
+static void ram_console_dump(struct kmsg_dumper *dumper, enum kmsg_dump_reason reason,
+		const char *s1, unsigned long l1,
+		const char *s2, unsigned long l2)
+{
+	ram_console_write(NULL, s1, l1);
+	ram_console_write(NULL, s2, l2);
+}
+#endif
+
 static int __init ram_console_init(struct ram_console_buffer *buffer,
 				   size_t buffer_size, char *old_buf)
 {
@@ -299,6 +312,12 @@ static int __init ram_console_init(struct ram_console_buffer *buffer,
 	buffer->sig = RAM_CONSOLE_SIG;
 	buffer->start = 0;
 	buffer->size = 0;
+
+#ifdef CONFIG_ANDROID_RAM_CONSOLE_PANIC
+	ram_dumper.dump = ram_console_dump;
+	if (kmsg_dump_register(&ram_dumper))
+		pr_warn("Failed to register kmsg dumper");
+#endif
 
 	register_console(&ram_console);
 #ifdef CONFIG_ANDROID_RAM_CONSOLE_ENABLE_VERBOSE

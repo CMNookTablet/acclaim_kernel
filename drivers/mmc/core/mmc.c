@@ -282,6 +282,61 @@ MMC_DEV_ATTR(name, "%s\n", card->cid.prod_name);
 MMC_DEV_ATTR(oemid, "0x%04x\n", card->cid.oemid);
 MMC_DEV_ATTR(serial, "0x%08x\n", card->cid.serial);
 
+static ssize_t mmc_power_class_show(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	struct mmc_card *card = container_of(dev, struct mmc_card, dev);
+
+	return sprintf(buf, "%u\n", card->ext_csd.power_class);
+}
+
+static ssize_t mmc_power_class_store(struct device *dev,
+	struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct mmc_card *card = container_of(dev, struct mmc_card, dev);
+	unsigned long power_class;
+	int err;
+
+	if (strict_strtoul(buf, 0, &power_class))
+		return -EINVAL;
+
+	if (power_class == card->ext_csd.power_class)
+		return count;
+
+	mmc_claim_host(card->host);
+
+	/*
+	 * Power class.
+	 */
+	err = mmc_switch(card, EXT_CSD_CMD_SET_NORMAL,
+			EXT_CSD_POWER_CLASS, power_class);
+	if (!err)
+		card->ext_csd.power_class = power_class;
+	else {
+		printk(KERN_WARNING "%s: set power class failed\n",
+				mmc_hostname(card->host));
+		count = -EINVAL;
+	}
+
+	/*
+	 * High performance mode.
+	 */
+	if (power_class == 4) {
+		err = mmc_switch(card, MMC_SWITCH_MODE_CMD_SET,
+				EXT_CSD_POWER_CLASS, power_class);
+		if (err)
+			printk(KERN_WARNING "%s: set high performance failed\n",
+					mmc_hostname(card->host));
+	}
+
+	mmc_release_host(card->host);
+
+	return count;
+}
+
+DEVICE_ATTR(power_class, S_IWUSR | S_IRUGO, mmc_power_class_show,
+			mmc_power_class_store);
+
 static struct attribute *mmc_std_attrs[] = {
 	&dev_attr_cid.attr,
 	&dev_attr_csd.attr,
@@ -292,6 +347,7 @@ static struct attribute *mmc_std_attrs[] = {
 	&dev_attr_name.attr,
 	&dev_attr_oemid.attr,
 	&dev_attr_serial.attr,
+	&dev_attr_power_class.attr,
 	NULL,
 };
 
@@ -321,6 +377,7 @@ static int mmc_init_card(struct mmc_host *host, u32 ocr,
 	int err, ddr = 0;
 	u32 cid[4];
 	unsigned int max_dtr;
+	unsigned int power_class = 0;
 
 	BUG_ON(!host);
 	WARN_ON(!host->claimed);
@@ -424,6 +481,9 @@ static int mmc_init_card(struct mmc_host *host, u32 ocr,
 			goto free_card;
 	}
 
+	if (oldcard)
+		power_class = oldcard->ext_csd.power_class;
+
 	/*
 	 * Activate high speed (if supported)
 	 */
@@ -442,6 +502,26 @@ static int mmc_init_card(struct mmc_host *host, u32 ocr,
 			mmc_card_set_highspeed(card);
 			mmc_set_timing(card->host, MMC_TIMING_MMC_HS);
 		}
+	}
+
+	/*
+	 * Power class.
+	 */
+	if (power_class) {
+		err = mmc_switch(card, EXT_CSD_CMD_SET_NORMAL,
+				EXT_CSD_POWER_CLASS, power_class);
+		if (err && err != -EBADMSG)
+			goto free_card;
+	}
+
+	/*
+	 * High performance mode.
+	 */
+	if (power_class == 4) {
+		err = mmc_switch(card, MMC_SWITCH_MODE_CMD_SET,
+				EXT_CSD_POWER_CLASS, power_class);
+		if (err && err != -EBADMSG)
+			goto free_card;
 	}
 
 	/*

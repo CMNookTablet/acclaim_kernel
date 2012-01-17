@@ -104,4 +104,5 @@ void omap_dm_timer_write_counter(struct omap_dm_timer *timer, unsigned int value
 int omap_dm_timers_active(void);
 void omap_dm_timer_set_int_disable(struct omap_dm_timer *, unsigned int);
 
+unsigned int omap_dm_timer_get_match(struct omap_dm_timer *timer);
 #endif /* __ASM_ARCH_DMTIMER_H */

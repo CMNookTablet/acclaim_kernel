@@ -471,4 +471,3 @@ int __init omap_sram_init(void)
 
 	return 0;
 }
-EXPORT_SYMBOL(omap_sram_init);

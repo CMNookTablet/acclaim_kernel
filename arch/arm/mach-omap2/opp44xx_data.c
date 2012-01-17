@@ -75,6 +75,9 @@ static struct omap_opp_def __initdata omap44xx_pre_es2_1_opp_def_list[] = {
 	OMAP_OPP_DEF("omap-aess-audio", true, 196608000, 1100000),
 	/* ABE OPP3 - OPPTB */
 	OMAP_OPP_DEF("omap-aess-audio", false, 196608000, 1260000),
+
+	/* L3 OPPLP - DPLL cascading */
+	OMAP_OPP_DEF("l3_main_1", false, 98304000, 1005000),
 	/* L3 OPP1 - OPP50 */
 	OMAP_OPP_DEF("l3_main_1", true, 100000000, 930000),
 	/* L3 OPP2 - OPP100, OPP-Turbo, OPP-SB */
@@ -131,9 +134,6 @@ static struct omap_opp_def __initdata omap44xx_opp_def_list[] = {
 	OMAP_OPP_DEF("omap-aess-audio", true, 196608000, 1188000),
 	/* ABE OPP3 - OPPTB */
 	OMAP_OPP_DEF("omap-aess-audio", false, 196608000, 1300000),
-
-	/* L3 OPPLP - DPLL cascading */
-	OMAP_OPP_DEF("l3_main_1", false, 98304000, 1005000),
 	/* L3 OPP1 - OPP50 */
 	OMAP_OPP_DEF("l3_main_1", true, 100000000, 1025000),
 	/* L3 OPP2 - OPP100, OPP-Turbo, OPP-SB */

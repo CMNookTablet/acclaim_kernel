@@ -1999,6 +1999,7 @@ void musb_g_suspend(struct musb *musb)
 		break;
 	case OTG_STATE_B_PERIPHERAL:
 		musb->is_suspended = 1;
+		(void) musb_gadget_vbus_draw(&musb->g, 2);
 		if (musb->gadget_driver && musb->gadget_driver->suspend) {
 			spin_unlock(&musb->lock);
 			musb->gadget_driver->suspend(&musb->g);

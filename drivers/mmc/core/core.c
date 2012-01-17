@@ -80,7 +80,7 @@ static int mmc_schedule_delayed_work(struct delayed_work *work,
 /*
  * Internal function. Flush all scheduled work from the MMC work queue.
  */
-static void mmc_flush_scheduled_work(void)
+void mmc_flush_scheduled_work(void)
 {
 	flush_workqueue(workqueue);
 }
@@ -1325,10 +1325,12 @@ int mmc_card_sleep(struct mmc_host *host)
 	int err = -ENOSYS;
 
 	mmc_bus_get(host);
+	mmc_claim_host(host);
 
 	if (host->bus_ops && !host->bus_dead && host->bus_ops->awake)
 		err = host->bus_ops->sleep(host);
 
+	mmc_release_host(host);
 	mmc_bus_put(host);
 
 	return err;

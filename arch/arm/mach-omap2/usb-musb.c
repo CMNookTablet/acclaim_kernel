@@ -30,11 +30,14 @@
 
 #include <mach/hardware.h>
 #include <mach/irqs.h>
+#include <mach/board-4430-acclaim.h>
+
 #include <plat/mux.h>
 #include <plat/usb.h>
 #include <plat/omap_device.h>
 #include <plat/omap_hwmod.h>
 #include <plat/omap-pm.h>
+
 
 #define CONTROL_DEV_CONF                0x300
 #define PHY_PD				(1 << 0)
@@ -149,7 +152,11 @@ static char *usb_functions_all[] = {
 
 static struct android_usb_product usb_products[] = {
 	{
+#ifdef CONFIG_MACH_OMAP4_ACCLAIM
+		.product_id		= BN_USB_PRODUCT_ID_ACCLAIM,
+#else
 		.product_id     = OMAP_UMS_PRODUCT_ID,
+#endif
 		.num_functions  = ARRAY_SIZE(usb_functions_ums),
 		.functions      = usb_functions_ums,
 	},
@@ -159,7 +166,11 @@ static struct android_usb_product usb_products[] = {
 		.functions      = usb_functions_adb,
 	},
 	{
+#ifdef CONFIG_MACH_OMAP4_ACCLAIM
+		.product_id		= BN_USB_PRODUCT_ID_ACCLAIM,
+#else
 		.product_id     = OMAP_UMS_ADB_PRODUCT_ID,
+#endif
 		.num_functions  = ARRAY_SIZE(usb_functions_ums_adb),
 		.functions      = usb_functions_ums_adb,
 	},
@@ -207,10 +218,17 @@ static struct android_usb_product usb_products[] = {
 
 /* standard android USB platform data */
 static struct android_usb_platform_data andusb_plat = {
+#ifdef CONFIG_MACH_OMAP4_ACCLAIM
+	.vendor_id			= BN_USB_VENDOR_ID,
+	.product_id			= BN_USB_PRODUCT_ID_ACCLAIM,
+	.manufacturer_name	= BN_USB_MANUFACTURER_NAME,
+	.product_name		= BN_USB_PRODUCT_NAME,
+#else
 	.vendor_id		= OMAP_VENDOR_ID,
 	.product_id		= OMAP_UMS_PRODUCT_ID,
 	.manufacturer_name	= "Texas Instruments Inc.",
 	.product_name		= "OMAP-3/4",
+#endif
 	.serial_number		= device_serial,
 	.num_products		= ARRAY_SIZE(usb_products),
 	.products		= usb_products,
@@ -228,10 +246,17 @@ static struct platform_device androidusb_device = {
 
 #ifdef CONFIG_USB_ANDROID_MASS_STORAGE
 static struct usb_mass_storage_platform_data usbms_plat = {
+#ifdef CONFIG_MACH_OMAP4_ACCLAIM
+	.vendor		= BN_USB_MANUFACTURER_NAME,
+	.product	= BN_USB_PRODUCT_NAME,
+	.release	= 1,
+	.nluns		= 2,
+#else
 	.vendor		= "Texas Instruments Inc.",
 	.product	= "OMAP4",
 	.release	= 1,
 	.nluns		= 1,
+#endif
 };
 
 static struct platform_device usb_mass_storage_device = {
@@ -281,8 +306,12 @@ static void usb_gadget_init(void)
 		val[3] = omap_readl(reg + 0xC);
 	}
 
+#ifdef CONFIG_MACH_OMAP4_ACCLAIM
+    snprintf(device_serial, sizeof(device_serial), "%08x%08x", system_serial_high, system_serial_low);
+#else
 	snprintf(device_serial, MAX_USB_SERIAL_NUM, "%08X%08X%08X%08X",
 					val[3], val[2], val[1], val[0]);
+#endif
 
 #ifdef CONFIG_USB_ANDROID_RNDIS
 	/* create a fake MAC address from our serial number.

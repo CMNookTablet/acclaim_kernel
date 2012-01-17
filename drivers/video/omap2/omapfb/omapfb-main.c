@@ -1676,8 +1676,11 @@ static int omapfb_alloc_fbmem_display(struct fb_info *fbi, unsigned long size,
 		size = w * h * bytespp;
 	}
 
-	if (!size)
+	if (!size) {
 		size = w * h * bytespp;
+	} else {
+		omap_vram_clear(paddr, size, 0x00000000);
+	}
 
 	return omapfb_alloc_fbmem(fbi, size, paddr);
 }
@@ -1837,6 +1840,9 @@ static int omapfb_allocate_all_fbs(struct omapfb2_device *fbdev)
 				return r;
 		}
 	}
+
+	// Fill the framebuffer with white
+	omap_vram_clear_free(0x00000000);
 
 	for (i = 0; i < fbdev->num_fbs; i++) {
 		struct omapfb_info *ofbi = FB2OFB(fbdev->fbs[i]);

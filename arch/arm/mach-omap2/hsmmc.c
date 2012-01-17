@@ -142,8 +142,7 @@ static void omap4_hsmmc1_before_set_reg(struct device *dev, int slot,
 	 * FIXME handle VMMC1A as needed ...
 	 */
 	reg = omap4_ctrl_pad_readl(control_pbias_offset);
-	reg &= ~(OMAP4_MMC1_PBIASLITE_PWRDNZ_MASK |
-		OMAP4_MMC1_PWRDNZ_MASK |
+	reg &= ~(OMAP4_MMC1_PWRDNZ_MASK |
 		OMAP4_USBC1_ICUSB_PWRDNZ_MASK);
 	omap4_ctrl_pad_writel(reg, control_pbias_offset);
 }
@@ -179,10 +178,10 @@ static void omap4_hsmmc1_after_set_reg(struct device *dev, int slot,
 		}
 	} else {
 		reg = omap4_ctrl_pad_readl(control_pbias_offset);
-		reg |= (OMAP4_MMC1_PBIASLITE_PWRDNZ_MASK |
-			OMAP4_MMC1_PWRDNZ_MASK |
+		reg |= (OMAP4_MMC1_PWRDNZ_MASK |
 			OMAP4_MMC1_PBIASLITE_VMODE_MASK |
 			OMAP4_USBC1_ICUSB_PWRDNZ_MASK);
+		reg &= ~(OMAP4_MMC1_PBIASLITE_PWRDNZ_MASK);
 		omap4_ctrl_pad_writel(reg, control_pbias_offset);
 	}
 }
@@ -276,6 +275,13 @@ void __init omap2_hsmmc_init(struct omap2_hsmmc_info *controllers)
 			OMAP4_SDMMC1_DR1_SPEEDCTRL_MASK |
 			OMAP4_SDMMC1_DR2_SPEEDCTRL_MASK);
 		omap4_ctrl_pad_writel(reg, control_mmc1);
+
+		/*clears OMAP4_MMC1_PBIASLITE_PWRDNZ to avoid
+		power consumption increase upon emmc boot without
+		sdcard plugged in*/
+		reg = omap4_ctrl_pad_readl(control_pbias_offset);
+		reg &= ~(OMAP4_MMC1_PBIASLITE_PWRDNZ_MASK);
+		omap4_ctrl_pad_writel(reg, control_pbias_offset);
 	}
 
 	for (c = controllers; c->mmc; c++) {

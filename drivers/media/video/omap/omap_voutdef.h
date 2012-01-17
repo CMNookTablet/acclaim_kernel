@@ -12,6 +12,9 @@
 #define OMAP_VOUTDEF_H
 
 #include <plat/display.h>
+#ifdef CONFIG_HAS_EARLYSUSPEND
+#include <linux/earlysuspend.h>
+#endif
 
 #define YUYV_BPP        2
 #define RGB565_BPP      2
@@ -188,6 +191,9 @@ struct omap_vout_device {
 	/* workqueue for manual update */
 	struct omap_vout_work *work;
 	struct workqueue_struct *workqueue;
+#ifdef CONFIG_HAS_EARLYSUSPEND
+	struct early_suspend early_suspend;
+#endif
 };
 
 struct vout_platform_data {

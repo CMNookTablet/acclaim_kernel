@@ -81,7 +81,7 @@ obj-$(CONFIG_ARCH_OMAP3)		+= cm.o
 obj-$(CONFIG_ARCH_OMAP4)		+= cm4xxx.o
 
 # EMIF
-obj-$(CONFIG_ARCH_OMAP4)		+= emif.o lpddr2_jedec_data.o lpddr2_elpida_data.o
+obj-$(CONFIG_ARCH_OMAP4)		+= emif.o lpddr2_jedec_data.o lpddr2_samsung_data.o lpddr2_elpida_data.o
 
 # Clock framework
 obj-$(CONFIG_ARCH_OMAP2)		+= $(clock-common) clock2xxx.o \
@@ -194,6 +194,12 @@ obj-$(CONFIG_MACH_OMAP_4430SDP)		+= board-4430sdp.o \
 					   omap_phy_internal.o \
 					   hsmmc.o
 obj-$(CONFIG_MACH_OMAP4_PANDA)		+= board-omap4panda.o \
+					   omap_phy_internal.o \
+					   hsmmc.o
+
+obj-$(CONFIG_MACH_OMAP4_ACCLAIM)		+= board-acclaim.o \
+					   board-acclaim-panel.o \
+					   board-acclaim-peripherals.o \
 					   omap_phy_internal.o \
 					   hsmmc.o
 

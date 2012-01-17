@@ -101,6 +101,10 @@
  */
 #define OMAP_DEVICE_MAGIC		 0xf00dcafe
 
+/* Public data */
+
+DEFINE_MUTEX(opp_mutex);
+
 /* Private functions */
 
 /**

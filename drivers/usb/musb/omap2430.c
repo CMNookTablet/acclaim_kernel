@@ -64,7 +64,7 @@ void musb_enable_vbus(struct musb *musb)
 }
 
  /* blocking notifier support */
-int musb_notifier_call(struct notifier_block *nb,
+static int process_xceiver_event(struct notifier_block *nb,
 		unsigned long event, void *unused)
 {
 	struct musb	*musb = container_of(nb, struct musb, nb);
@@ -90,11 +90,18 @@ int musb_notifier_call(struct notifier_block *nb,
 			val |= SMARTIDLE | SMARTSTDBY | ENABLEWAKEUP;
 		musb_writel(musb->mregs, OTG_SYSCONFIG, val);
 
+		val = musb_readl(musb->mregs, OTG_INTERFSEL);
 		if (data->interface_type == MUSB_INTERFACE_UTMI) {
 			otg_init(musb->xceiv);
 			hostmode = 1;
 			musb_enable_vbus(musb);
+			val &= ~ULPI_12PIN;
+			val |= UTMI_8BIT;
+		} else {
+			val |= ULPI_12PIN;
 		}
+
+		musb_writel(musb->mregs, OTG_INTERFSEL, val);
 
 		val = __raw_readl(phymux_base +
 				USBA0_OTG_CE_PAD1_USBA0_OTG_DP);
@@ -119,6 +126,7 @@ int musb_notifier_call(struct notifier_block *nb,
 			val |= SMARTIDLE | SMARTSTDBY | ENABLEWAKEUP;
 		musb_writel(musb->mregs, OTG_SYSCONFIG, val);
 
+		val = musb_readl(musb->mregs, OTG_INTERFSEL);
 		if (data->interface_type == MUSB_INTERFACE_UTMI) {
 			otg_init(musb->xceiv);
 			if (!hostmode) {
@@ -126,7 +134,12 @@ int musb_notifier_call(struct notifier_block *nb,
 				__raw_writel(IDDIG | AVALID | VBUSVALID,
 					ctrl_base + USBOTGHS_CONTROL);
 			}
+			val &= ~ULPI_12PIN;
+			val |= UTMI_8BIT;
+		} else {
+			val |= ULPI_12PIN;
 		}
+		musb_writel(musb->mregs, OTG_INTERFSEL, val);
 
 		break;
 
@@ -134,6 +147,11 @@ int musb_notifier_call(struct notifier_block *nb,
 		DBG(1, "VBUS Disconnect\n");
 
 		if (data->interface_type == MUSB_INTERFACE_UTMI) {
+			/* Config INFERFSEL for correct charger detection */
+			val = musb_readl(musb->mregs, OTG_INTERFSEL);
+			val |= ULPI_12PIN;
+			musb_writel(musb->mregs, OTG_INTERFSEL, val);
+
 			/* enable this clock because in suspend interrupt
 			 * handler phy clocks are disabled. If phy clocks are
 			 * not enabled then DISCONNECT interrupt will not be
@@ -162,11 +180,17 @@ int musb_notifier_call(struct notifier_block *nb,
 					USBA0_OTG_CE_PAD1_USBA0_OTG_DP);
 		break;
 	default:
-		DBG(1, "ID float\n");
 		return NOTIFY_DONE;
 	}
 
 	return NOTIFY_OK;
+}
+
+ /* blocking notifier support */
+int musb_notifier_call(struct notifier_block *nb,
+		unsigned long event, void *unused)
+{
+	return process_xceiver_event(nb, event, unused);
 }
 
 static void musb_do_idle(unsigned long _musb)
@@ -344,12 +368,11 @@ int is_musb_active(struct device *dev)
 
 int __init musb_platform_init(struct musb *musb)
 {
-	u32 l;
 	struct device *dev = musb->controller;
 	struct musb_hdrc_platform_data *plat = dev->platform_data;
-	struct omap_musb_board_data *data = plat->board_data;
 	int status;
 	u32 val;
+	int charger = 0;
 
 	/* We require some kind of external transceiver, hooked
 	 * up through ULPI.  TWL4030-family PMICs include one,
@@ -364,21 +387,10 @@ int __init musb_platform_init(struct musb *musb)
 	/* Fixme this can be enabled when load the gadget driver also*/
 	musb_platform_resume(musb);
 
-	/*powerup the phy as romcode would have put the phy in some state
-	* which is impacting the core retention if the gadget driver is not
-	* loaded.
-	*/
-	l = musb_readl(musb->mregs, OTG_INTERFSEL);
-
-	if (data->interface_type == MUSB_INTERFACE_UTMI) {
-		/* OMAP4 uses Internal PHY GS70 which uses UTMI interface */
-		l &= ~ULPI_12PIN;       /* Disable ULPI */
-		l |= UTMI_8BIT;         /* Enable UTMI  */
-	} else {
-		l |= ULPI_12PIN;
-	}
-
-	musb_writel(musb->mregs, OTG_INTERFSEL, l);
+	/* Fixme set OTG_INTERFSEL to HW default value for charger detection */
+	val = musb_readl(musb->mregs, OTG_INTERFSEL);
+	val |= ULPI_12PIN;
+	musb_writel(musb->mregs, OTG_INTERFSEL, val);
 
 	pr_debug("HS USB OTG: revision 0x%x, sysconfig 0x%02x, "
 			"sysstatus 0x%x, intrfsel 0x%x, simenable  0x%x\n",
@@ -418,6 +430,13 @@ int __init musb_platform_init(struct musb *musb)
 	val &= ~(SMARTIDLEWKUP | NOSTDBY | ENABLEWAKEUP);
 	val |= FORCEIDLE | FORCESTDBY;
 	musb_writel(musb->mregs, OTG_SYSCONFIG,	val);
+
+	// We are late, find out what happend during boot.
+	charger = otg_get_link_status(musb->xceiv);
+	printk("HS USB OTG: Cable detected at boot = %d\n", charger);
+	if (charger == USB_EVENT_VBUS)
+		process_xceiver_event(&musb->nb, charger, NULL);
+
 	return 0;
 }
 

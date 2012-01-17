@@ -455,13 +455,13 @@ int abe_set_opp_processing(u32 opp)
 		/* OPP50% */
 		dOppMode32 = DOPPMODE32_OPP50;
 		break;
-	default:
-		abe->dbg_param |= ERR_API;
-		abe_dbg_error_log(ABE_BLOCK_COPY_ERR);
 	case ABE_OPP100:
 		/* OPP100% */
 		dOppMode32 = DOPPMODE32_OPP100;
 		break;
+	default:
+		abe->dbg_param |= ERR_API;
+		abe_dbg_error_log(ABE_BLOCK_COPY_ERR);
 	}
 	/* Write Multiframe inside DMEM */
 	abe_block_copy(COPY_FROM_HOST_TO_ABE, ABE_DMEM,
@@ -898,6 +898,13 @@ int abe_enable_data_transfer(u32 id)
 		format = abe_port[DMIC_PORT].format;
 		abe_init_atc(DMIC_PORT);
 		abe_init_io_tasks(DMIC_PORT, &format, protocol);
+	}
+	/* Added by Mistral */
+	if (id == MM_EXT_OUT_PORT) {
+		protocol = &(abe_port[MM_EXT_OUT_PORT].protocol);
+		format = abe_port[MM_EXT_OUT_PORT].format;
+		abe_init_atc(MM_EXT_OUT_PORT);
+		abe_init_io_tasks(MM_EXT_OUT_PORT, &format, protocol);
 	}
 	if (id == VX_UL_PORT) {
 		if (abe_port[VX_DL_PORT].status !=
@@ -2078,7 +2085,11 @@ EXPORT_SYMBOL(abe_enable_test_pattern);
 int abe_wakeup(void)
 {
 	/* Restart event generator */
+#ifdef CONFIG_ABE_44100
+	abe_write_event_generator (EVENT_44100);
+#else
 	abe_write_event_generator(EVENT_TIMER);
+#endif
 	/* reconfigure DMA Req and MCU Irq visibility */
 	abe_hw_configuration();
 	return 0;

@@ -68,6 +68,8 @@ static struct cpuidle_params cpuidle_params_table[] = {
 	{1,	1644,	3298,	39000},
 };
 
+extern int aic3100_get_record_status(void);
+
 static int omap4_idle_bm_check(void)
 {
 	if (!omap4_can_sleep())
@@ -91,6 +93,7 @@ static int omap4_enter_idle(struct cpuidle_device *dev,
 	struct timespec ts_preidle, ts_postidle, ts_idle;
 	u32 cpu1_state;
 	int cpu_id = smp_processor_id();
+	int audio_recording;
 
 	/* Used to keep track of the total time in idle */
 	getnstimeofday(&ts_preidle);
@@ -121,6 +124,16 @@ static int omap4_enter_idle(struct cpuidle_device *dev,
 	 */
 	cpu1_state = pwrdm_read_pwrst(cpu1_pd);
 	if (cpu1_state != PWRDM_POWER_OFF) {
+		wmb();
+		DO_WFI();
+		goto return_sleep_time;
+	}
+
+	/*
+	 * XXX: Do only a WFI as long as audio recording is active
+	 */
+	audio_recording = aic3100_get_record_status();
+	if (unlikely(audio_recording && cx->cpu0_state == PWRDM_POWER_OFF)) {
 		wmb();
 		DO_WFI();
 		goto return_sleep_time;

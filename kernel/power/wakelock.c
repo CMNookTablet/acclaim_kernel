@@ -228,6 +228,14 @@ static void print_active_locks(int type)
 	}
 }
 
+void dump_active_locks(int type)
+{
+	unsigned long irqflags;
+	spin_lock_irqsave(&list_lock, irqflags);
+	print_active_locks(type);
+	spin_unlock_irqrestore(&list_lock, irqflags);
+}
+
 static long has_wake_lock_locked(int type)
 {
 	struct wake_lock *lock, *n;

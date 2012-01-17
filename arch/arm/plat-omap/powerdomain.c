@@ -35,6 +35,8 @@ static LIST_HEAD(pwrdm_list);
 static struct pwrdm_functions *arch_pwrdm;
 static struct mutex global_wakeuplat_mutex;
 
+static void pwrdm_wakeuplat_update_pwrst(struct powerdomain *pwrdm);
+
 /* Private functions */
 
 static struct powerdomain *_pwrdm_lookup(const char *name)
@@ -931,7 +933,9 @@ int pwrdm_wakeuplat_set_constraint (struct powerdomain *pwrdm,
 	}
 
 	mutex_lock(&global_wakeuplat_mutex);
-
+#ifdef CONFIG_DEBUG_PI_LIST
+	spin_lock(&pwrdm->wakeuplat_lock);
+#endif
 	plist_for_each_entry(user, &pwrdm->wakeuplat_dev_list, node) {
 		if (user->dev == dev) {
 			found = 1;
@@ -961,6 +965,9 @@ int pwrdm_wakeuplat_set_constraint (struct powerdomain *pwrdm,
 	pwrdm_wakeuplat_update_pwrst(pwrdm);
 
 exit_set:
+#ifdef CONFIG_DEBUG_PI_LIST
+	spin_unlock(&pwrdm->wakeuplat_lock);
+#endif
 	mutex_unlock(&global_wakeuplat_mutex);
 
 	return ret;
@@ -989,6 +996,10 @@ int pwrdm_wakeuplat_release_constraint (struct powerdomain *pwrdm,
 
 	mutex_lock(&global_wakeuplat_mutex);
 
+#ifdef CONFIG_DEBUG_PI_LIST
+	spin_lock(&pwrdm->wakeuplat_lock);
+#endif
+
 	plist_for_each_entry(user, &pwrdm->wakeuplat_dev_list, node) {
 		if (user->dev == dev) {
 			found = 1;
@@ -1008,6 +1019,9 @@ int pwrdm_wakeuplat_release_constraint (struct powerdomain *pwrdm,
 	pwrdm_wakeuplat_update_pwrst(pwrdm);
 
 exit_rls:
+#ifdef CONFIG_DEBUG_PI_LIST
+	spin_unlock(&pwrdm->wakeuplat_lock);
+#endif
 	mutex_unlock(&global_wakeuplat_mutex);
 
 	return ret;
@@ -1021,7 +1035,7 @@ exit_rls:
  * the power domain power state neeting the constraint. Programs
  * new state if it is different from current power state.
  */
-void pwrdm_wakeuplat_update_pwrst(struct powerdomain *pwrdm)
+static void pwrdm_wakeuplat_update_pwrst(struct powerdomain *pwrdm)
 {
 	struct plist_node *node;
 	int new_state;

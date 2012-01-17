@@ -19,6 +19,7 @@
 #include <linux/workqueue.h>
 #include <linux/interrupt.h>
 #include <linux/kernel.h>
+#include <linux/wakelock.h>
 #include <sound/core.h>
 #include <sound/pcm.h>
 #include <sound/control.h>
@@ -613,6 +614,11 @@ struct snd_soc_dai_link {
 	int (*be_hw_params_fixup)(struct snd_soc_pcm_runtime *rtd,
 			struct snd_pcm_hw_params *params);
 
+	/* Void Pointer struct introduced to maintain
+	 * the ABE specific Port Details for OMAP4 
+	 */
+	 void *private_data;
+
 	/* machine stream operations */
 	struct snd_soc_ops *ops;
 };
@@ -654,6 +660,7 @@ struct snd_soc_card {
 	int num_rtd;
 
 	struct work_struct deferred_resume_work;
+	struct wake_lock resume_wake_lock;
 
 	/* lists of probed devices belonging to this card */
 	struct list_head codec_dev_list;

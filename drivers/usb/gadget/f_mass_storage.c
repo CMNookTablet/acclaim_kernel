@@ -2718,7 +2718,8 @@ static ssize_t print_switch_name(struct switch_dev *sdev, char *buf)
 static ssize_t print_switch_state(struct switch_dev *sdev, char *buf)
 {
 	struct fsg_common *common = container_of(sdev, struct fsg_common, sdev);
-	return sprintf(buf, "%s\n", (common->running ? "online" : "offline"));
+	return sprintf(buf, "%s\n", (switch_get_state(&common->sdev)
+				     ? "online" : "offline"));
 }
 
 static struct fsg_common *fsg_common_init(struct fsg_common *common,
@@ -3226,6 +3227,34 @@ fsg_common_from_params(struct fsg_common *common,
 #ifdef CONFIG_USB_ANDROID_MASS_STORAGE
 
 static struct fsg_config fsg_cfg;
+static struct fsg_operations fsg_ops;
+
+static int fsg_post_eject(struct fsg_common *common,
+			  struct fsg_lun *lun, int num)
+{
+	struct fsg_lun *curlun;
+	int nluns;
+	int ums_inactive = 1;
+	int i;
+
+	// Checking all luns for any open backing files.
+	for (i = 0, nluns = common->nluns, curlun = common->luns; i < nluns; ++curlun, ++i) {
+		if (fsg_lun_is_open(curlun)) {
+			ums_inactive = 0;
+		}
+	}
+
+	/* lun->prevent_medium_removal is checked in do_start_stop already
+	 * before post_eject hook is called not necessary to check it again
+	 */
+
+	/* put switch to offline state */
+	if (ums_inactive) {
+		switch_set_state(&common->sdev, 0);
+	}
+
+	return 0;
+}
 
 static int fsg_probe(struct platform_device *pdev)
 {
@@ -3248,6 +3277,9 @@ static int fsg_probe(struct platform_device *pdev)
 	fsg_cfg.release = pdata->release;
 	fsg_cfg.can_stall = 0;
 	fsg_cfg.pdev = pdev;
+	fsg_cfg.ops = &fsg_ops;
+
+	fsg_ops.post_eject = fsg_post_eject;
 
 	return 0;
 }

@@ -843,7 +843,7 @@ static int snd_pcm_pre_start(struct snd_pcm_substream *substream, int state)
 	if (runtime->status->state != SNDRV_PCM_STATE_PREPARED)
 		return -EBADFD;
 	if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK &&
-	    !substream->hw_no_buffer &&
+		 !substream->hw_no_buffer &&
 	    !snd_pcm_playback_data(substream))
 		return -EPIPE;
 	runtime->trigger_master = substream;
@@ -1193,6 +1193,38 @@ static int snd_pcm_resume(struct snd_pcm_substream *substream)
 	snd_power_unlock(card);
 	return res;
 }
+
+EXPORT_SYMBOL(snd_pcm_resume);
+
+/**
+ * snd_pcm_suspend_all - trigger SUSPEND to all substreams in the given pcm
+ * @pcm: the PCM instance
+ *
+ * After this call, all streams are changed to SUSPENDED state.
+ */
+int snd_pcm_resume_all(struct snd_pcm *pcm)
+{
+	struct snd_pcm_substream *substream;
+	int stream, err = 0;
+
+	if (! pcm)
+		return 0;
+
+	for (stream = 0; stream < 2; stream++) {
+		for (substream = pcm->streams[stream].substream;
+		     substream; substream = substream->next) {
+			/* FIXME: the open/close code should lock this as well */
+			if (substream->runtime == NULL)
+				continue;
+			err = snd_pcm_resume(substream);
+			if (err < 0 && err != -EBUSY)
+				return err;
+		}
+	}
+	return 0;
+}
+
+EXPORT_SYMBOL(snd_pcm_resume_all);
 
 #else
 
