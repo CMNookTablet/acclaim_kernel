@@ -1006,6 +1006,53 @@ int i2c_del_adapter(struct i2c_adapter *adap)
 }
 EXPORT_SYMBOL(i2c_del_adapter);
 
+/**
+ * i2c_detect_ext_master - Perform some special handling
+ * for externally controlled I2C devices.
+ * For now we only disable the spurious IRQ
+ * @adap: the adapter driving the client
+ * Context: can sleep
+ *
+ * This detects registered I2C devices which are controlled
+ * by a remote/external proc.
+ */
+/* FIXME-HASH: Disabled for now */
+#if !defined(CONFIG_HWSPINLOCK)
+#if 0
+void i2c_detect_ext_master(struct i2c_adapter *adap)
+{
+	struct i2c_adapter *found;
+	struct i2c_client *client;
+
+	/* First make sure that this adapter was ever added */
+	mutex_lock(&core_lock);
+	found = idr_find(&i2c_adapter_idr, adap->nr);
+	mutex_unlock(&core_lock);
+	if (found != adap) {
+		pr_debug("i2c-core: attempting to process unregistered "
+			 "adapter [%s]\n", adap->name);
+		return;
+	}
+
+	/* Disable IRQ(s) automatically registeried via HWMOD
+	 * for I2C channel controlled by remote master
+	 */
+	mutex_lock(&adap->ext_clients_lock);
+	list_for_each_entry(client, &adap->ext_clients,
+			    detected) {
+		dev_dbg(&adap->dev, "Client detected %s at 0x%x\n",
+			client->name, client->addr);
+		disable_irq(client->irq);
+	}
+	mutex_unlock(&adap->ext_clients_lock);
+
+	return;
+}
+#else
+#endif
+#endif
+void i2c_detect_ext_master(struct i2c_adapter *adap) { return; }
+EXPORT_SYMBOL(i2c_detect_ext_master);
 
 /* ------------------------------------------------------------------------- */
 

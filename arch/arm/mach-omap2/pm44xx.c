@@ -43,6 +43,8 @@
 #include "cm-regbits-44xx.h"
 #include "prm-regbits-44xx.h"
 #include "clock.h"
+#include "cm2_44xx.h"
+#include "cm1_44xx.h"
 #include "scrm_44xx.h"
 
 void *so_ram_address;

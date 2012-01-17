@@ -50,6 +50,7 @@
 #include <plat/powerdomain.h>
 #include <plat/clock.h>
 #include <plat/omap_hwmod.h>
+#include <plat/omap_device.h>
 #include <plat/prcm.h>
 
 #include "cm.h"
@@ -2117,3 +2118,56 @@ int omap_hwmod_for_each_by_class(const char *classname,
 	return ret;
 }
 
+/**
+ * omap_hwmod_get_context_loss_count - get lost context count
+ * @oh: struct omap_hwmod *
+ *
+ * Query the powerdomain of of @oh to get the context loss
+ * count for this device.
+ *
+ * Returns the context loss count of the powerdomain assocated with @oh
+ * upon success, or zero if no powerdomain exists for @oh.
+ */
+int omap_hwmod_get_context_loss_count(struct omap_hwmod *oh)
+{
+	struct powerdomain *pwrdm;
+	int ret = 0;
+
+	pwrdm = omap_hwmod_get_pwrdm(oh);
+	if (pwrdm)
+		ret = pwrdm_get_context_loss_count(pwrdm);
+
+	return ret;
+}
+
+/**
+ * omap_hwmod_name_get_dev() - convert a hwmod name to device pointer
+ * @oh_name: name of the hwmod device
+ *
+ * returns back a struct device * pointer associated with a hwmod
+ * device represented by a hwmod_name
+ */
+struct device *omap_hwmod_name_get_dev(const char *oh_name)
+{
+	struct omap_hwmod *oh;
+
+	if (!oh_name) {
+		WARN(1, "%s: no hwmod name!\n", __func__);
+		return ERR_PTR(-EINVAL);
+	}
+
+	oh = _lookup(oh_name);
+	if (IS_ERR_OR_NULL(oh)) {
+		WARN(1, "%s: no hwmod for %s\n", __func__,
+			oh_name);
+		return ERR_PTR(oh ? PTR_ERR(oh) : -ENODEV);
+	}
+	if (IS_ERR_OR_NULL(oh->od)) {
+		WARN(1, "%s: no omap_device for %s\n", __func__,
+			oh_name);
+		return ERR_PTR(oh ? PTR_ERR(oh) : -ENODEV);
+	}
+
+	return &oh->od->pdev.dev;
+}
+EXPORT_SYMBOL(omap_hwmod_name_get_dev);

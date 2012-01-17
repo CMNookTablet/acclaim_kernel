@@ -362,6 +362,15 @@ unsigned long omap_pm_cpu_get_freq(void);
  */
 int omap_pm_get_dev_context_loss_count(struct device *dev);
 
+/**
+ * omap_pm_was_context_lost - return true if a device lost hw context
+ *
+ * This function returns a bool value indication if a device has lost
+ * its context. Depending on the HW implementation of the device, Context
+ * can be lost in OFF or OSWR. This function reads and *CLEARS* the context
+ * lost registers for the device.
+ */
+bool omap_pm_was_context_lost(struct device *dev);
 
 /**
  * omap_pm_set_min_mpu_freq - sets the min frequency the mpu should be allowed

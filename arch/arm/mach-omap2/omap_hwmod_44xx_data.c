@@ -32,6 +32,8 @@
 #include "omap_hwmod_common_data.h"
 
 #include "cm.h"
+#include "cm1_44xx.h"
+#include "cm2_44xx.h"
 #include "prm-regbits-44xx.h"
 
 /* Base offset for all OMAP4 interrupts external to MPUSS */

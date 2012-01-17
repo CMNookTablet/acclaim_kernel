@@ -18,6 +18,7 @@
 #include <linux/err.h>
 #include <linux/i2c/twl.h>
 #include <linux/bootmem.h>
+#include <linux/memblock.h>
 
 #include <mach/hardware.h>
 #include <mach/omap4-common.h>
@@ -38,6 +39,7 @@
 #include <plat/omap_hwmod.h>
 #include <plat/omap_device.h>
 #include <plat/omap-pm.h>
+#include <plat/remoteproc.h>
 #include <sound/omap-abe-dsp.h>
 
 #if	defined(CONFIG_OMAP_DSP) || defined(CONFIG_OMAP_DSP_MODULE)
@@ -100,6 +102,69 @@ EXPORT_SYMBOL(dsp_kfunc_device_register);
 #else
 static inline void omap_init_dsp(void) { }
 #endif	/* CONFIG_OMAP_DSP */
+
+
+#if defined(CONFIG_OMAP_REMOTE_PROC)
+static phys_addr_t omap_ipu_phys_mempool_base;
+static u32 omap_ipu_phys_mempool_size;
+static phys_addr_t omap_ipu_phys_st_mempool_base;
+static u32 omap_ipu_phys_st_mempool_size;
+
+void __init omap_ipu_reserve_sdram_memblock(void)
+{
+	/* currently handles only ipu. dsp will be handled later...*/
+	u32 size = CONFIG_OMAP_REMOTEPROC_MEMPOOL_SIZE;
+	phys_addr_t paddr;
+
+	if (!size)
+		return;
+
+	paddr = memblock_alloc(size, SZ_1M);
+	if (!paddr) {
+		pr_err("%s: failed to reserve %x bytes\n",
+				__func__, size);
+		return;
+	}
+	memblock_free(paddr, size);
+	memblock_remove(paddr, size);
+
+	omap_ipu_phys_mempool_base = paddr;
+	omap_ipu_phys_mempool_size = size;
+}
+
+void __init omap_ipu_set_static_mempool(u32 start, u32 size)
+{
+	omap_ipu_phys_st_mempool_base = start;
+	omap_ipu_phys_st_mempool_size = size;
+}
+
+phys_addr_t omap_ipu_get_mempool_base(enum omap_rproc_mempool_type type)
+{
+	switch (type) {
+	case OMAP_RPROC_MEMPOOL_STATIC:
+		return omap_ipu_phys_st_mempool_base;
+	case OMAP_RPROC_MEMPOOL_DYNAMIC:
+		return omap_ipu_phys_mempool_base;
+	default:
+		return 0;
+	}
+}
+EXPORT_SYMBOL(omap_ipu_get_mempool_base);
+
+u32 omap_ipu_get_mempool_size(enum omap_rproc_mempool_type type)
+{
+	switch (type) {
+	case OMAP_RPROC_MEMPOOL_STATIC:
+		return omap_ipu_phys_st_mempool_size;
+	case OMAP_RPROC_MEMPOOL_DYNAMIC:
+		return omap_ipu_phys_mempool_size;
+	default:
+		return 0;
+	}
+}
+EXPORT_SYMBOL(omap_ipu_get_mempool_size);
+#endif
+
 
 #if defined(CONFIG_MPU_BRIDGE) ||  defined(CONFIG_MPU_BRIDGE_MODULE)
 
@@ -422,7 +487,7 @@ static void omap_init_aess(void)
 		return;
 	}
 
-	pdata->get_context_loss_count = omap_pm_get_dev_context_loss_count;
+	pdata->get_context_loss_count = omap_device_get_context_loss_count;
 
 	od = omap_device_build("omap-aess-audio", -1, oh, pdata,
 				sizeof(struct omap4_abe_dsp_pdata),
@@ -600,7 +665,7 @@ static int __init omap_init_devices(void)
 	 */
 	omap_init_aess();
 	omap_init_dmic();
-	omap_init_dsp();
+//	omap_init_dsp();
 	omap_init_kp();
 	omap_init_rng();
 	omap_init_mcpdm();

@@ -560,6 +560,7 @@ static int __init omap_vram_early_vram(char *p)
 }
 early_param("vram", omap_vram_early_vram);
 
+/* FIXME-HASH: Reverted VRAM reserve to L27.13.1-Beta source */
 /*
  * Called from map_io. We need to call to this early enough so that we
  * can reserve the fixed SDRAM regions before VM could get hold of them.

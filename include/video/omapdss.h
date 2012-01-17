@@ -20,7 +20,8 @@
 
 #include <linux/list.h>
 #include <linux/kobject.h>
-#include <linux/device.h>
+//#include <linux/device.h>
+#include <linux/platform_device.h>
 #include <linux/fb.h>
 
 #define DISPC_IRQ_FRAMEDONE		(1 << 0)
@@ -66,6 +67,7 @@ enum omap_plane {
 	OMAP_DSS_VIDEO1	= 1,
 	OMAP_DSS_VIDEO2	= 2,
 	OMAP_DSS_VIDEO3 = 3,
+	OMAP_DSS_WB 	= 4,
 };
 
 enum omap_channel {
@@ -95,6 +97,55 @@ enum omap_color_mode {
 	OMAP_DSS_COLOR_ARGB16_1555	= 1 << 17, /* ARGB16 - 1555 */
 	OMAP_DSS_COLOR_XRGB16_1555	= 1 << 18, /* xRGB16 - 1555 */
 };
+#if 0
+/* FIXME-HASH */
+	OMAP_DSS_COLOR_RGBA12		= 1 << 15, /* RGBA12 - 4444 */
+	OMAP_DSS_COLOR_XRGB12		= 1 << 16, /* xRGB12, 16-bit cont. */
+	OMAP_DSS_COLOR_ARGB16_1555	= 1 << 17, /* ARGB16-1555 */
+	OMAP_DSS_COLOR_RGBX24_32_ALGN   = 1 << 18, /* 32-msb aligned 24bit */
+	OMAP_DSS_COLOR_XRGB15		= 1 << 19, /* xRGB15: 1555*/
+
+	OMAP_DSS_COLOR_GFX_OMAP2 =
+		OMAP_DSS_COLOR_CLUT1 | OMAP_DSS_COLOR_CLUT2 |
+		OMAP_DSS_COLOR_CLUT4 | OMAP_DSS_COLOR_CLUT8 |
+		OMAP_DSS_COLOR_RGB12U | OMAP_DSS_COLOR_RGB16 |
+		OMAP_DSS_COLOR_RGB24U | OMAP_DSS_COLOR_RGB24P,
+
+	OMAP_DSS_COLOR_VID_OMAP2 =
+		OMAP_DSS_COLOR_RGB16 | OMAP_DSS_COLOR_RGB24U |
+		OMAP_DSS_COLOR_RGB24P | OMAP_DSS_COLOR_YUV2 |
+		OMAP_DSS_COLOR_UYVY,
+
+	OMAP_DSS_COLOR_GFX_OMAP3 =
+		OMAP_DSS_COLOR_CLUT1 | OMAP_DSS_COLOR_CLUT2 |
+		OMAP_DSS_COLOR_CLUT4 | OMAP_DSS_COLOR_CLUT8 |
+		OMAP_DSS_COLOR_RGB12U | OMAP_DSS_COLOR_ARGB16 |
+		OMAP_DSS_COLOR_RGB16 | OMAP_DSS_COLOR_RGB24U |
+		OMAP_DSS_COLOR_RGB24P | OMAP_DSS_COLOR_ARGB32 |
+		OMAP_DSS_COLOR_RGBA32 | OMAP_DSS_COLOR_RGBX32,
+
+	OMAP_DSS_COLOR_VID1_OMAP3 =
+		OMAP_DSS_COLOR_NV12 | OMAP_DSS_COLOR_RGBA12 |
+		OMAP_DSS_COLOR_XRGB12 | OMAP_DSS_COLOR_ARGB16_1555 |
+		OMAP_DSS_COLOR_RGBX24_32_ALGN | OMAP_DSS_COLOR_XRGB15 |
+		OMAP_DSS_COLOR_RGB12U | OMAP_DSS_COLOR_RGB16 |
+		OMAP_DSS_COLOR_RGB24U | OMAP_DSS_COLOR_RGB24P |
+		OMAP_DSS_COLOR_YUV2 | OMAP_DSS_COLOR_UYVY |
+		OMAP_DSS_COLOR_ARGB32 | OMAP_DSS_COLOR_RGBA32 |
+		OMAP_DSS_COLOR_RGBX32,
+
+	OMAP_DSS_COLOR_VID2_OMAP3 =
+		OMAP_DSS_COLOR_NV12 | OMAP_DSS_COLOR_RGBA12 |
+		OMAP_DSS_COLOR_XRGB12 | OMAP_DSS_COLOR_ARGB16_1555 |
+		OMAP_DSS_COLOR_RGBX24_32_ALGN | OMAP_DSS_COLOR_XRGB15 |
+		OMAP_DSS_COLOR_RGB12U | OMAP_DSS_COLOR_ARGB16 |
+		OMAP_DSS_COLOR_RGB16 | OMAP_DSS_COLOR_RGB24U |
+		OMAP_DSS_COLOR_RGB24P | OMAP_DSS_COLOR_YUV2 |
+		OMAP_DSS_COLOR_UYVY | OMAP_DSS_COLOR_ARGB32 |
+		OMAP_DSS_COLOR_RGBA32 | OMAP_DSS_COLOR_RGBX32,
+
+	OMAP_DSS_COLOR_VID3_OMAP3 = OMAP_DSS_COLOR_VID2_OMAP3,
+#endif
 
 enum omap_lcd_display_type {
 	OMAP_DSS_LCD_DISPLAY_STN,
@@ -144,6 +195,12 @@ enum omap_display_caps {
 	OMAP_DSS_DISPLAY_CAP_TEAR_ELIM		= 1 << 1,
 };
 
+enum omap_dss_color_conv_type {
+	OMAP_DSS_COLOR_CONV_BT601_5_LR = 0,
+	OMAP_DSS_COLOR_CONV_BT601_5_FR = 0,
+	OMAP_DSS_COLOR_CONV_BT709,
+};
+
 enum omap_dss_update_mode {
 	OMAP_DSS_UPDATE_DISABLED = 0,
 	OMAP_DSS_UPDATE_AUTO,
@@ -154,11 +211,18 @@ enum omap_dss_display_state {
 	OMAP_DSS_DISPLAY_DISABLED = 0,
 	OMAP_DSS_DISPLAY_ACTIVE,
 	OMAP_DSS_DISPLAY_SUSPENDED,
+	OMAP_DSS_DISPLAY_TRANSITION,
 };
 
 enum omap_dispc_irq_type {
 	OMAP_DISPC_IRQ_TYPE_FRAMEDONE,
 	OMAP_DISPC_IRQ_TYPE_VSYNC,
+};
+
+enum omap_dss_reset_phase {
+	OMAP_DSS_RESET_OFF = 1,
+	OMAP_DSS_RESET_ON = 2,
+	OMAP_DSS_RESET_BOTH = 3,
 };
 
 /* XXX perhaps this should be removed */
@@ -209,6 +273,17 @@ enum omap_overlay_zorder {
 	OMAP_DSS_OVL_ZORDER_3   = 3,
 };
 
+
+/* Writeback*/
+enum omap_writeback_source {
+	OMAP_WB_LCD_1_MANAGER	= 0,
+	OMAP_WB_LCD_2_MANAGER	= 1,
+	OMAP_WB_TV_MANAGER	= 2,
+	OMAP_WB_OVERLAY0	= 3,
+	OMAP_WB_OVERLAY1	= 4,
+	OMAP_WB_OVERLAY2	= 5,
+	OMAP_WB_OVERLAY3	= 6,
+};
 /* RFBI */
 
 struct rfbi_timings {
@@ -260,16 +335,27 @@ int dsi_vc_dcs_read_1(struct omap_dss_device *dssdev, int channel, u8 dcs_cmd,
 		u8 *data);
 int dsi_vc_dcs_read_2(struct omap_dss_device *dssdev, int channel, u8 dcs_cmd,
 		u8 *data1, u8 *data2);
+int dsi_vc_gen_write_nosync(struct omap_dss_device *dssdev, int channel,
+		u8 *data, int len);
+int dsi_vc_gen_write(struct omap_dss_device *dssdev, int channel,
+		u8 *data, int len);
 int dsi_vc_set_max_rx_packet_size(struct omap_dss_device *dssdev, int channel,
 		u16 len);
 int dsi_vc_send_null(struct omap_dss_device *dssdev, int channel);
 int dsi_vc_send_bta_sync(struct omap_dss_device *dssdev, int channel);
 
 int dsi_video_mode_enable(struct omap_dss_device *dssdev, u8 data_type);
+void dsi_video_mode_disable(struct omap_dss_device *dssdev);
+
+int dsi_vc_gen_read_2(struct omap_dss_device *dssdev, int channel, u16 cmd,
+		u8 *buf, int buflen);
+void dsi_videomode_panel_preinit(struct omap_dss_device *dssdev);
+
 
 /* Board specific data */
 struct omap_dss_board_info {
 	int (*get_context_loss_count)(struct device *dev);
+	int (*get_last_off_on_transaction_id)(struct device *dev);
 	int num_devices;
 	struct omap_dss_device **devices;
 	struct omap_dss_device *default_device;
@@ -278,17 +364,22 @@ struct omap_dss_board_info {
 
 #if defined(CONFIG_OMAP2_DSS_MODULE) || defined(CONFIG_OMAP2_DSS)
 /* Init with the board info */
-extern int omap_display_init(struct omap_dss_board_info *board_data);
+extern void __init omap_display_init(struct omap_dss_board_info *board_data);
 #else
-static inline int omap_display_init(struct omap_dss_board_info *board_data)
+static inline void __init omap_display_init(struct omap_dss_board_info *board_data)
 {
 	return 0;
 }
 #endif
 
 struct omap_display_platform_data {
+	char name[16];
+	int hwmod_count;
 	struct omap_dss_board_info *board_data;
 	/* TODO: Additional members to be added when PM is considered */
+	int (*device_enable)(struct platform_device *pdev);
+	int (*device_shutdown)(struct platform_device *pdev);
+	int (*device_idle)(struct platform_device *pdev);
 };
 
 struct omap_video_timings {

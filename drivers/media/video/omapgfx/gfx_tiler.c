@@ -20,6 +20,26 @@
 #define TILER_ALLOCATE_V4L2
 #endif
 
+/*
+#define TILER_PAGE 0x1000
+#define TILER_WIDTH    256
+#define TILER_HEIGHT   128
+#define TILER_BLOCK_WIDTH  64
+#define TILER_BLOCK_HEIGHT 64
+#define TILER_LENGTH (TILER_WIDTH * TILER_HEIGHT * TILER_PAGE)
+
+enum tiler_fmt {
+  TILFMT_MIN     = -2,
+  TILFMT_INVALID = -2,
+  TILFMT_NONE    = -1,
+  TILFMT_8BIT    = 0,
+  TILFMT_16BIT   = 1,
+  TILFMT_32BIT   = 2,
+  TILFMT_PAGE    = 3,
+  TILFMT_MAX     = 3,
+  TILFMT_8AND16  = 4,  /* used to mark NV12 reserve block
+ };
+*/
 void v4gfx_tiler_buffer_free(struct v4gfx_device *vout, unsigned int count,
 			     unsigned int startindex)
 {

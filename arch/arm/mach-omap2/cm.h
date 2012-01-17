@@ -1,8 +1,5 @@
-#ifndef __ARCH_ASM_MACH_OMAP2_CM_H
-#define __ARCH_ASM_MACH_OMAP2_CM_H
-
 /*
- * OMAP2/3 Clock Management (CM) register definitions
+ * OMAP2+ Clock Management prototypes
  *
  * Copyright (C) 2007-2009 Texas Instruments, Inc.
  * Copyright (C) 2007-2009 Nokia Corporation
@@ -13,40 +10,39 @@
  * it under the terms of the GNU General Public License version 2 as
  * published by the Free Software Foundation.
  */
-
-#include "prcm-common.h"
-
-#define OMAP2420_CM_REGADDR(module, reg)				\
-			OMAP2_L4_IO_ADDRESS(OMAP2420_CM_BASE + (module) + (reg))
-#define OMAP2430_CM_REGADDR(module, reg)				\
-			OMAP2_L4_IO_ADDRESS(OMAP2430_CM_BASE + (module) + (reg))
-#define OMAP34XX_CM_REGADDR(module, reg)				\
-			OMAP2_L4_IO_ADDRESS(OMAP3430_CM_BASE + (module) + (reg))
-#define OMAP44XX_CM1_REGADDR(module, reg)				\
-			OMAP2_L4_IO_ADDRESS(OMAP4430_CM1_BASE + ((module) & (MOD_MASK)) + (reg))
-#define OMAP44XX_CM2_REGADDR(module, reg)				\
-			OMAP2_L4_IO_ADDRESS(OMAP4430_CM2_BASE + ((module) & (MOD_MASK)) + (reg))
-
-#include "cm44xx.h"
+#ifndef __ARCH_ASM_MACH_OMAP2_CM_H
+#define __ARCH_ASM_MACH_OMAP2_CM_H
 
 /*
- * Architecture-specific global CM registers
- * Use cm_{read,write}_reg() with these registers.
- * These registers appear once per CM module.
+ * MAX_MODULE_READY_TIME: max duration in microseconds to wait for the
+ * PRCM to request that a module exit the inactive state in the case of
+ * OMAP2 & 3.
+ * In the case of OMAP4 this is the max duration in microseconds for the
+ * module to reach the functionnal state from an inactive state.
  */
+#define MAX_MODULE_READY_TIME		2000
 
-#define OMAP3430_CM_REVISION		OMAP34XX_CM_REGADDR(OCP_MOD, 0x0000)
-#define OMAP3430_CM_SYSCONFIG		OMAP34XX_CM_REGADDR(OCP_MOD, 0x0010)
-#define OMAP3430_CM_POLCTRL		OMAP34XX_CM_REGADDR(OCP_MOD, 0x009c)
+/* Clock management domain register get/set */
 
-#define OMAP3_CM_CLKOUT_CTRL_OFFSET	0x0070
-#define OMAP3430_CM_CLKOUT_CTRL		OMAP_CM_REGADDR(OMAP3430_CCR_MOD, 0x0070)
+#ifndef __ASSEMBLER__
+extern u32 cm_read_mod_reg(s16 module, u16 idx);
+extern void cm_write_mod_reg(u32 val, s16 module, u16 idx);
+extern u32 cm_rmw_mod_reg_bits(u32 mask, u32 bits, s16 module, s16 idx);
 
-/*
- * Module specific CM registers from CM_BASE + domain offset
- * Use cm_{read,write}_mod_reg() with these registers.
- * These register offsets generally appear in more than one PRCM submodule.
- */
+extern int omap2_cm_wait_module_ready(s16 prcm_mod, u8 idlest_id,
+				      u8 idlest_shift);
+extern int omap4_cm_wait_module_ready(void __iomem *clkctrl_reg);
+
+static inline u32 cm_set_mod_reg_bits(u32 bits, s16 module, s16 idx)
+{
+	return cm_rmw_mod_reg_bits(bits, bits, module, idx);
+}
+
+static inline u32 cm_clear_mod_reg_bits(u32 bits, s16 module, s16 idx)
+{
+	return cm_rmw_mod_reg_bits(bits, 0x0, module, idx);
+}
+#endif
 
 /* Common between 24xx and 34xx */
 
@@ -69,7 +65,6 @@
 #define CM_CLKSEL2					0x0044
 #define OMAP2_CM_CLKSTCTRL				0x0048
 #define OMAP4_CM_CLKSTCTRL				0x0000
-
 
 /* Architecture-specific registers */
 
@@ -96,61 +91,12 @@
 #define OMAP3430_CM_CLKSEL2_EMU				0x0050
 #define OMAP3430_CM_CLKSEL3_EMU				0x0054
 
-/* CM2.CEFUSE_CM2 register offsets */
-
 /* OMAP4 modulemode control */
 #define OMAP4430_MODULEMODE_HWCTRL			0
 #define OMAP4430_MODULEMODE_SWCTRL			1
 
-/* Clock management domain register get/set */
-
-#ifndef __ASSEMBLER__
-
-extern u32 cm_read_mod_reg(s16 module, u16 idx);
-extern void cm_write_mod_reg(u32 val, s16 module, u16 idx);
-extern u32 cm_rmw_mod_reg_bits(u32 mask, u32 bits, s16 module, s16 idx);
-
-extern int omap2_cm_wait_module_ready(s16 prcm_mod, u8 idlest_id,
-				      u8 idlest_shift);
-extern int omap4_cm_wait_module_ready(void __iomem *clkctrl_reg);
-
-static inline u32 cm_set_mod_reg_bits(u32 bits, s16 module, s16 idx)
-{
-	return cm_rmw_mod_reg_bits(bits, bits, module, idx);
-}
-
-static inline u32 cm_clear_mod_reg_bits(u32 bits, s16 module, s16 idx)
-{
-	return cm_rmw_mod_reg_bits(bits, 0x0, module, idx);
-}
-
-#endif
-
-/* CM register bits shared between 24XX and 3430 */
-
-/* CM_CLKSEL_GFX */
-#define OMAP_CLKSEL_GFX_SHIFT				0
-#define OMAP_CLKSEL_GFX_MASK				(0x7 << 0)
-
-/* CM_ICLKEN_GFX */
-#define OMAP_EN_GFX_SHIFT				0
-#define OMAP_EN_GFX_MASK				(1 << 0)
-
-/* CM_IDLEST_GFX */
-#define OMAP_ST_GFX_MASK				(1 << 0)
-
-
 /* CM_IDLEST indicator */
 #define OMAP24XX_CM_IDLEST_VAL		0
 #define OMAP34XX_CM_IDLEST_VAL		1
-
-/*
- * MAX_MODULE_READY_TIME: max duration in microseconds to wait for the
- * PRCM to request that a module exit the inactive state in the case of
- * OMAP2 & 3.
- * In the case of OMAP4 this is the max duration in microseconds for the
- * module to reach the functionnal state from an inactive state.
- */
-#define MAX_MODULE_READY_TIME		2000
 
 #endif

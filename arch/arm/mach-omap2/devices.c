@@ -906,11 +906,13 @@ void __init omap_display_init(struct omap_dss_board_info *board_data)
 			pr_err("Could not look up %s\n", oh_name[i]);
 			return;
 		}
-
+		/* FIXME-HASH: CHECK TO BE SURE WE NEED THIS */
 		strcpy(pdata.name, oh_name[i]);
 		pdata.hwmod_count	= 2;
 		pdata.board_data	= board_data;
 		pdata.board_data->get_last_off_on_transaction_id = NULL;
+		/* FIXME-HASH: added context_loss_count for new dss driver */
+		pdata.board_data->get_context_loss_count = omap_device_get_context_loss_count;
 
 		pdata.device_enable	= omap_device_enable;
 		pdata.device_idle	= omap_device_idle;
@@ -1044,8 +1046,11 @@ static void omap_init_gpu(void)
 		return;
 	}
 
-	pdata->set_max_mpu_wakeup_lat = omap_pm_set_max_mpu_wakeup_lat;
+	/* FIXME-HASH: FROM L27.13.1-Beta */
 	pdata->set_min_bus_tput = omap_pm_set_min_bus_tput;
+	pdata->set_max_mpu_wakeup_lat = omap_pm_set_max_mpu_wakeup_lat;
+	/* FIXME-HASH: ADDED FROM 4AI.4 */
+	//pdata->device_scale = omap_device_scale;
 	pdata->device_enable = omap_device_enable;
 	pdata->device_idle = omap_device_idle;
 	pdata->device_shutdown = omap_device_shutdown;

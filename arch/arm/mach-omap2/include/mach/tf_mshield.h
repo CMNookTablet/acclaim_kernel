@@ -6,6 +6,6 @@
  * published by the Free Software Foundation.
  */
 
-#ifdef CONFIG_TF_MSHIELD
+#ifdef CONFIG_TF_ZEBRA
 void tf_allocate_workspace(void);
 #endif

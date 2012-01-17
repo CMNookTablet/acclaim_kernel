@@ -37,6 +37,7 @@
 #include <plat/serial.h>
 
 #include <plat/clock.h>
+#include <plat/remoteproc.h>
 
 #if defined(CONFIG_ARCH_OMAP2) || defined(CONFIG_ARCH_OMAP3)
 # include "../mach-omap2/sdrc.h"

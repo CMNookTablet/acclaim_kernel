@@ -423,6 +423,7 @@ static inline void i2c_unlock_adapter(struct i2c_adapter *adapter)
 #if defined(CONFIG_I2C) || defined(CONFIG_I2C_MODULE)
 extern int i2c_add_adapter(struct i2c_adapter *);
 extern int i2c_del_adapter(struct i2c_adapter *);
+extern void i2c_detect_ext_master(struct i2c_adapter *);
 extern int i2c_add_numbered_adapter(struct i2c_adapter *);
 
 extern int i2c_register_driver(struct module *, struct i2c_driver *);

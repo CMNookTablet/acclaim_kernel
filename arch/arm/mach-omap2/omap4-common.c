@@ -188,7 +188,7 @@ void __iomem *l2cache_base;
 void __iomem *gic_cpu_base_addr;
 void __iomem *gic_dist_base_addr;
 
-#ifndef CONFIG_TF_MSHIELD
+#ifndef CONFIG_TF_ZEBRA
 static struct clockdomain *l4_secure_clkdm;
 #endif
 
@@ -206,6 +206,19 @@ void __init gic_init_irq(void)
 }
 
 #ifdef CONFIG_CACHE_L2X0
+
+static void omap4_l2x0_disable(void)
+{
+	/* Disable PL310 L2 Cache controller */
+	omap_smc1(0x102, 0x0);
+}
+
+static void omap4_l2x0_set_debug(unsigned long val)
+{
+	/* Program PL310 L2 Cache controller debug register */
+	omap_smc1(0x100, val);
+}
+
 static int __init omap_l2_cache_init(void)
 {
 	/*
@@ -241,13 +254,20 @@ static int __init omap_l2_cache_init(void)
 	else
 		l2x0_init(l2cache_base, OMAP4_L2X0_AUXCTL_VALUE, 0xd0000fff);
 
+	/*
+	 * Override default outer_cache.disable with a OMAP4
+	 * specific one
+	*/
+	outer_cache.disable = omap4_l2x0_disable;
+	outer_cache.set_debug = omap4_l2x0_set_debug;
+
 	return 0;
 }
 early_initcall(omap_l2_cache_init);
 #endif
 
 
-#ifndef CONFIG_TF_MSHIELD
+#ifndef CONFIG_TF_ZEBRA
 /*
  * omap4_sec_dispatcher: Routine to dispatch low power secure
  * service routines

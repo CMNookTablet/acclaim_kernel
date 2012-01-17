@@ -125,7 +125,12 @@ static int iommu_enable(struct iommu *obj)
 
 	if (!obj)
 		return -EINVAL;
+
+	if (!arch_iommu)
+		return -ENODEV;
+
 	err = arch_iommu->enable(obj);
+
 	return err;
 }
 
@@ -133,6 +138,7 @@ static void iommu_disable(struct iommu *obj)
 {
 	if (!obj)
 		return;
+
 	arch_iommu->disable(obj);
 }
 
@@ -253,6 +259,11 @@ int load_iotlb_entry(struct iommu *obj, struct iotlb_entry *e)
 	struct iotlb_lock l;
 	struct cr_regs *cr;
 
+	if (obj && obj->secure_mode) {
+		WARN_ON(1);
+		return -EBUSY;
+	}
+
 	if (!obj || !obj->nr_tlb_entries || !e)
 		return -EINVAL;
 
@@ -283,8 +294,9 @@ int load_iotlb_entry(struct iommu *obj, struct iotlb_entry *e)
 	}
 
 	cr = iotlb_alloc_cr(obj, e);
-	if (IS_ERR(cr))
+	if (IS_ERR(cr)) {
 		return PTR_ERR(cr);
+	}
 
 	iotlb_load_cr(obj, cr);
 	kfree(cr);
@@ -312,6 +324,11 @@ void flush_iotlb_page(struct iommu *obj, u32 da)
 	int i;
 	struct cr_regs cr;
 
+	if (obj && obj->secure_mode) {
+		WARN_ON(1);
+		return;
+	}
+
 	for_each_iotlb_cr(obj, obj->nr_tlb_entries, i, cr) {
 		u32 start;
 		size_t bytes;
@@ -329,6 +346,7 @@ void flush_iotlb_page(struct iommu *obj, u32 da)
 			iommu_write_reg(obj, 1, MMU_FLUSH_ENTRY);
 		}
 	}
+
 	if (i == obj->nr_tlb_entries)
 		dev_dbg(obj->dev, "%s: no page for %08x\n", __func__, da);
 }
@@ -365,6 +383,7 @@ void flush_iotlb_all(struct iommu *obj)
 	l.base = 0;
 	l.vict = 0;
 	iotlb_lock_set(obj, &l);
+
 	iommu_write_reg(obj, 1, MMU_GFLUSH);
 }
 EXPORT_SYMBOL_GPL(flush_iotlb_all);
@@ -457,6 +476,7 @@ ssize_t iommu_dump_ctx(struct iommu *obj, char *buf, ssize_t bytes)
 		return -EINVAL;
 
 	bytes = arch_iommu->dump_ctx(obj, buf, bytes);
+
 	return bytes;
 }
 EXPORT_SYMBOL_GPL(iommu_dump_ctx);
@@ -469,6 +489,7 @@ static int __dump_tlb_entries(struct iommu *obj, struct cr_regs *crs, int num)
 	struct cr_regs *p = crs;
 
 	iotlb_lock_get(obj, &saved);
+
 	for_each_iotlb_cr(obj, num, i, tmp) {
 		if (!iotlb_cr_valid(&tmp))
 			continue;
@@ -476,6 +497,7 @@ static int __dump_tlb_entries(struct iommu *obj, struct cr_regs *crs, int num)
 	}
 
 	iotlb_lock_set(obj, &saved);
+
 	return  p - crs;
 }
 
@@ -691,6 +713,11 @@ int iopgtable_store_entry(struct iommu *obj, struct iotlb_entry *e)
 {
 	int err;
 
+	if (obj && obj->secure_mode) {
+		WARN_ON(1);
+		return -EBUSY;
+	}
+
 	flush_iotlb_page(obj, e->da);
 	err = iopgtable_store_entry_core(obj, e);
 #ifdef PREFETCH_IOTLB
@@ -711,6 +738,11 @@ EXPORT_SYMBOL_GPL(iopgtable_store_entry);
 void iopgtable_lookup_entry(struct iommu *obj, u32 da, u32 **ppgd, u32 **ppte)
 {
 	u32 *iopgd, *iopte = NULL;
+
+	if (obj && obj->secure_mode) {
+		WARN_ON(1);
+		return;
+	}
 
 	iopgd = iopgd_offset(obj, da);
 	if (!*iopgd)
@@ -780,6 +812,11 @@ out:
 size_t iopgtable_clear_entry(struct iommu *obj, u32 da)
 {
 	size_t bytes;
+
+	if (obj && obj->secure_mode) {
+		WARN_ON(1);
+		return 0;
+	}
 
 	spin_lock(&obj->page_table_lock);
 
@@ -913,9 +950,11 @@ struct iommu *iommu_get(const char *name)
 				 device_match_by_alias);
 	if (!dev)
 		return ERR_PTR(-ENODEV);
+
 	obj = to_iommu(dev);
 
 	mutex_lock(&obj->iommu_lock);
+
 	if (obj->refcount++ == 0) {
 		err = iommu_enable(obj);
 		if (err)
@@ -925,12 +964,14 @@ struct iommu *iommu_get(const char *name)
 			if (rev == 0x0)
 				iommu_set_twl(obj, false);
 		}
-
 		flush_iotlb_all(obj);
 	}
+
 	if (!try_module_get(obj->owner))
 		goto err_module;
+
 	mutex_unlock(&obj->iommu_lock);
+
 	dev_dbg(obj->dev, "%s: %s\n", __func__, obj->name);
 	return obj;
 
@@ -965,6 +1006,57 @@ void iommu_put(struct iommu *obj)
 	dev_dbg(obj->dev, "%s: %s\n", __func__, obj->name);
 }
 EXPORT_SYMBOL_GPL(iommu_put);
+
+int iommu_set_isr(const char *name,
+		  int (*isr)(struct iommu *obj, u32 da, u32 iommu_errs,
+			     void *priv),
+		  void *isr_priv)
+{
+	struct device *dev;
+	struct iommu *obj;
+
+	dev = driver_find_device(&omap_iommu_driver.driver, NULL, (void *)name,
+				 device_match_by_alias);
+	if (!dev)
+		return -ENODEV;
+
+	obj = to_iommu(dev);
+	mutex_lock(&obj->iommu_lock);
+	if (obj->refcount != 0) {
+		mutex_unlock(&obj->iommu_lock);
+		return -EBUSY;
+	}
+	obj->isr = isr;
+	obj->isr_priv = isr_priv;
+	mutex_unlock(&obj->iommu_lock);
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(iommu_set_isr);
+
+int iommu_set_secure(const char *name, bool enable, void *data)
+{
+	struct device *dev;
+	struct iommu *obj;
+
+	dev = driver_find_device(&omap_iommu_driver.driver, NULL, (void *)name,
+				device_match_by_alias);
+	if (!dev)
+		return -ENODEV;
+
+	obj = to_iommu(dev);
+	mutex_lock(&obj->iommu_lock);
+	if (obj->refcount) {
+		mutex_unlock(&obj->iommu_lock);
+		return -EBUSY;
+	}
+	obj->secure_mode = enable;
+	obj->secure_ttb = data;
+	mutex_unlock(&obj->iommu_lock);
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(iommu_set_secure);
 
 /*
  *	OMAP Device MMU(IOMMU) detection
@@ -1056,7 +1148,6 @@ static void iopte_cachep_ctor(void *iopte)
 {
 	clean_dcache_area(iopte, IOPTE_TABLE_SIZE);
 }
-
 
 static int __init omap_iommu_init(void)
 {

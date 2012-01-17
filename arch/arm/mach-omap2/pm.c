@@ -27,6 +27,7 @@ static struct device *mpu_dev;
 static struct device *iva_dev;
 static struct device *l3_dev;
 static struct device *dsp_dev;
+static struct device *fdif_dev;
 
 struct device *omap2_get_mpuss_device(void)
 {
@@ -56,6 +57,13 @@ struct device *omap4_get_dsp_device(void)
 }
 EXPORT_SYMBOL(omap4_get_dsp_device);
 
+struct device *omap4_get_fdif_device(void)
+{
+	WARN_ON_ONCE(!fdif_dev);
+	return fdif_dev;
+}
+EXPORT_SYMBOL(omap4_get_fdif_device);
+
 /* static int _init_omap_device(struct omap_hwmod *oh, void *user) */
 static int _init_omap_device(char *name, struct device **new_dev)
 {
@@ -81,22 +89,20 @@ static int _init_omap_device(char *name, struct device **new_dev)
  */
 static void omap2_init_processor_devices(void)
 {
+	/* FIXME-HASH: Changed this up to include "fdif" device */
 	struct omap_hwmod *oh;
 
 	_init_omap_device("mpu", &mpu_dev);
 
 	if (cpu_is_omap34xx())
 		_init_omap_device("iva", &iva_dev);
-	oh = omap_hwmod_lookup("iva");
-	if (oh && oh->od)
-		iva_dev = &oh->od->pdev.dev;
 
-	oh = omap_hwmod_lookup("dsp");
-	if (oh && oh->od)
-		dsp_dev = &oh->od->pdev.dev;
-
-	if (cpu_is_omap44xx())
+	if (cpu_is_omap44xx()) {
 		_init_omap_device("l3_main_1", &l3_dev);
+		_init_omap_device("dsp", &dsp_dev);
+		_init_omap_device("iva", &iva_dev);
+		_init_omap_device("fdif", &fdif_dev);
+	}
 	else
 		_init_omap_device("l3_main", &l3_dev);
 }

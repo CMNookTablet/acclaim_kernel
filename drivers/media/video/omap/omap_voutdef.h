@@ -11,10 +11,7 @@
 #ifndef OMAP_VOUTDEF_H
 #define OMAP_VOUTDEF_H
 
-#include <plat/display.h>
-#ifdef CONFIG_HAS_EARLYSUSPEND
-#include <linux/earlysuspend.h>
-#endif
+#include <video/omapdss.h>
 
 #define YUYV_BPP        2
 #define RGB565_BPP      2
@@ -25,26 +22,10 @@
 #define RGB_VRFB_BPP    1
 #define MAX_CID		3
 #define MAC_VRFB_CTXS	4
-#ifdef CONFIG_ARCH_OMAP4
-#define MAX_VOUT_DEV	3
-#define MAX_OVLS	4
-#define MAX_DISPLAYS	4
-#else
 #define MAX_VOUT_DEV	2
 #define MAX_OVLS	3
 #define MAX_DISPLAYS	3
-#endif
 #define MAX_MANAGERS	3
-
-#define OMAP_VOUT_MAX_BUFFERS    6
-/*
- * Currently VRFB BUF context and Data Buffers are mapped 1:1
- */
- #define OMAP_VOUT_MAX_VRFB_CTXT        OMAP_VOUT_MAX_BUFFERS
-
-
-/* TI Private V4L2 ioctls */
-#define V4L2_CID_TI_DISPC_OVERLAY	(V4L2_CID_PRIVATE_BASE + 0)
 
 /* Enum for Rotation
  * DSS understands rotation in 0, 1, 2, 3 context
@@ -90,14 +71,6 @@ struct omap2video_device {
 	struct omap_overlay_manager *managers[MAX_MANAGERS];
 };
 
-/* manual update work */
-struct omap_vout_work {
-	struct omap_vout_device *vout;
-	struct work_struct work;
-	bool process;
-	bool queued;
-};
-
 /* per-device data structure */
 struct omap_vout_device {
 
@@ -106,13 +79,6 @@ struct omap_vout_device {
 	struct omap2video_device *vid_dev;
 	int vid;
 	int opened;
-
-#ifdef CONFIG_OMAP3_ISP_RESIZER_ON_OVERLAY
-#define ISPRSZ_MANUALMODE	(1<<2)
-#define ISPRSZ_ENABLE		(1<<1)
-#define ISPRSZ_CONFIGURED	(1<<0)
-	u32 isprsz;
-#endif
 
 	/* we don't allow to change image fmt/size once buffer has
 	 * been allocated
@@ -123,13 +89,6 @@ struct omap_vout_device {
 	/* keep buffer info across opens */
 	unsigned long buf_virt_addr[VIDEO_MAX_FRAME];
 	unsigned long buf_phy_addr[VIDEO_MAX_FRAME];
-	/* keep which buffers we actually allocated (via tiler) */
-	unsigned long buf_phy_uv_addr_alloced[VIDEO_MAX_FRAME];
-	unsigned long buf_phy_addr_alloced[VIDEO_MAX_FRAME];
-
-/* NV12 support*/
-	unsigned long buf_phy_uv_addr[VIDEO_MAX_FRAME];
-	u8 *queued_buf_uv_addr[VIDEO_MAX_FRAME];
 	enum omap_color_mode dss_mode;
 
 	/* we don't allow to request new buffer when old buffers are
@@ -162,9 +121,9 @@ struct omap_vout_device {
 	int vrfb_bpp; /* bytes per pixel with respect to VRFB */
 
 	struct vid_vrfb_dma vrfb_dma_tx;
-	unsigned int smsshado_phy_addr[OMAP_VOUT_MAX_VRFB_CTXT];
-	unsigned int smsshado_virt_addr[OMAP_VOUT_MAX_VRFB_CTXT];
-	struct vrfb vrfb_context[OMAP_VOUT_MAX_VRFB_CTXT];
+	unsigned int smsshado_phy_addr[MAC_VRFB_CTXS];
+	unsigned int smsshado_virt_addr[MAC_VRFB_CTXS];
+	struct vrfb vrfb_context[MAC_VRFB_CTXS];
 	bool vrfb_static_allocation;
 	unsigned int smsshado_size;
 	unsigned char pos;
@@ -174,8 +133,7 @@ struct omap_vout_device {
 	struct videobuf_buffer *cur_frm, *next_frm;
 	struct list_head dma_queue;
 	u8 *queued_buf_addr[VIDEO_MAX_FRAME];
-	u32 cropped_offset[VIDEO_MAX_FRAME];
-	u32 cropped_uv_offset[VIDEO_MAX_FRAME];
+	u32 cropped_offset;
 	s32 tv_field1_offset;
 	void *isr_handle;
 
@@ -184,22 +142,6 @@ struct omap_vout_device {
 	enum v4l2_buf_type type;
 	struct videobuf_queue vbq;
 	int io_allowed;
-	/* writeback variables*/
-	bool wb_enabled;
-	bool buf_empty;
 
-	/* workqueue for manual update */
-	struct omap_vout_work *work;
-	struct workqueue_struct *workqueue;
-#ifdef CONFIG_HAS_EARLYSUSPEND
-	struct early_suspend early_suspend;
-#endif
-};
-
-struct vout_platform_data {
-	void (*set_min_bus_tput)(struct device *dev, u8 agent_id,
-			unsigned long r);
-	void (*set_max_mpu_wakeup_lat)(struct device *dev, long t);
-	void (*set_cpu_freq)(unsigned long f);
 };
 #endif	/* ifndef OMAP_VOUTDEF_H */

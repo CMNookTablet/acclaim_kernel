@@ -52,7 +52,9 @@
 #include <mach/omap4-common.h>
 
 #include "../../../arch/arm/mach-omap2/pm.h"
+#include "../../../arch/arm/mach-omap2/prcm-common.h"
 #include "../../../arch/arm/mach-omap2/cm-regbits-44xx.h"
+#include "../../../arch/arm/mach-omap2/cm1_44xx.h"
 
 #include <sound/core.h>
 #include <sound/pcm.h>
@@ -67,7 +69,6 @@
 #include "omap-abe-coef.h"
 #include "omap-abe.h"
 #include "abe/abe_main.h"
-
 
 // TODO: change to S16 and use ARM SIMD to re-format to S32
 #define ABE_FORMATS	 (SNDRV_PCM_FMTBIT_S32_LE)

@@ -173,7 +173,7 @@ static long sync_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	void __user *ptr = (void __user *)arg;
 
 	switch (cmd) {
-	case DSSCOMP_WAIT:
+	case DSSCIOC_WAIT:
 	{
 		struct dsscomp_wait_data wd;
 		r = copy_from_user(&wd, ptr, sizeof(wd)) ? :
@@ -234,9 +234,13 @@ static long setup_mgr(struct dsscomp_dev *cdev,
 		u32 addr = (u32) oi->address;
 
 		/* convert addresses to user space */
-		if (oi->cfg.color_mode == OMAP_DSS_COLOR_NV12)
-			oi->uv = hwc_virt_to_phys(addr +
+		if (oi->cfg.color_mode == OMAP_DSS_COLOR_NV12) {
+			if (oi->uv_addr)
+				oi->uv = hwc_virt_to_phys((u32) oi->uv_addr);
+			else
+				oi->uv = hwc_virt_to_phys(addr +
 					oi->cfg.height * oi->cfg.stride);
+		}
 		oi->ba = hwc_virt_to_phys(addr);
 
 		r = r ? : dsscomp_set_ovl(comp, oi);
@@ -424,7 +428,7 @@ static long comp_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	dsscomp_gralloc_init(cdev);
 
 	switch (cmd) {
-	case DSSCOMP_SETUP_MGR:
+	case DSSCIOC_SETUP_MGR:
 	{
 		r = copy_from_user(&u.m.set, ptr, sizeof(u.m.set)) ? :
 		    u.m.set.num_ovls >= ARRAY_SIZE(u.m.ovl) ? -EINVAL :
@@ -434,13 +438,13 @@ static long comp_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		    setup_mgr(cdev, &u.m.set);
 		break;
 	}
-	case DSSCOMP_SETUP_DISPC:
+	case DSSCIOC_SETUP_DISPC:
 	{
 		r = copy_from_user(&u.dispc, ptr, sizeof(u.dispc)) ? :
 		    dsscomp_gralloc_queue_ioctl(&u.dispc);
 		break;
 	}
-	case DSSCOMP_QUERY_DISPLAY:
+	case DSSCIOC_QUERY_DISPLAY:
 	{
 		struct dsscomp_display_info *dis = NULL;
 		r = copy_from_user(&u.dis, ptr, sizeof(u.dis));
@@ -458,13 +462,13 @@ static long comp_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		}
 		break;
 	}
-	case DSSCOMP_CHECK_OVL:
+	case DSSCIOC_CHECK_OVL:
 	{
 		r = copy_from_user(&u.chk, ptr, sizeof(u.chk)) ? :
 		    check_ovl(cdev, &u.chk);
 		break;
 	}
-	case DSSCOMP_SETUP_DISPLAY:
+	case DSSCIOC_SETUP_DISPLAY:
 	{
 		r = copy_from_user(&u.sdis, ptr, sizeof(u.sdis)) ? :
 		    setup_display(cdev, &u.sdis);

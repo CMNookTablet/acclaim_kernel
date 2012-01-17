@@ -149,6 +149,8 @@
 #define FB_ACCEL_PROSAVAGE_DDR  0x8d	/* S3 ProSavage DDR             */
 #define FB_ACCEL_PROSAVAGE_DDRK 0x8e	/* S3 ProSavage DDR-K           */
 
+#define FB_ACCEL_PUV3_UNIGFX	0xa0	/* PKUnity-v3 Unigfx		*/
+
 struct fb_fix_screeninfo {
 	char id[16];			/* identification string eg "TT Builtin" */
 	unsigned long smem_start;	/* Start of frame buffer mem */
@@ -220,6 +222,10 @@ struct fb_bitfield {
 #define FB_VMODE_YWRAP		256	/* ywrap instead of panning     */
 #define FB_VMODE_SMOOTH_XPAN	512	/* smooth xpan possible (internally used) */
 #define FB_VMODE_CONUPDATE	512	/* don't update x/yoffset	*/
+
+#define FB_FLAG_RATIO_4_3	64
+#define FB_FLAG_RATIO_16_9	128
+#define FB_FLAG_PIXEL_REPEAT	256
 
 /*
  * Display rotation support
@@ -434,6 +440,8 @@ struct file;
 
 #define FB_MISC_PRIM_COLOR	1
 #define FB_MISC_1ST_DETAIL	2	/* First Detailed Timing is preferred */
+#define FB_MISC_HDMI		4	/* display supports HDMI signaling */
+
 struct fb_chroma {
 	__u32 redx;	/* in fraction of 1024 */
 	__u32 greenx;
@@ -529,14 +537,14 @@ struct fb_cursor_user {
 #define FB_EVENT_GET_CONSOLE_MAP        0x07
 /*      CONSOLE-SPECIFIC: set console to framebuffer mapping */
 #define FB_EVENT_SET_CONSOLE_MAP        0x08
-/*      A hardware display blank change occured */
+/*      A hardware display blank change occurred */
 #define FB_EVENT_BLANK                  0x09
 /*      Private modelist is to be replaced */
 #define FB_EVENT_NEW_MODELIST           0x0A
 /*	The resolution of the passed in fb_info about to change and
         all vc's should be changed         */
 #define FB_EVENT_MODE_CHANGE_ALL	0x0B
-/*	A software display blank change occured */
+/*	A software display blank change occurred */
 #define FB_EVENT_CONBLANK               0x0C
 /*      Get drawing requirements        */
 #define FB_EVENT_GET_REQ                0x0D
@@ -607,6 +615,12 @@ struct fb_deferred_io {
  * LOCKING NOTE: those functions must _ALL_ be called with the console
  * semaphore held, this is the only suitable locking mechanism we have
  * in 2.6. Some may be called at interrupt time at this point though.
+ *
+ * The exception to this is the debug related hooks.  Putting the fb
+ * into a debug state (e.g. flipping to the kernel console) and restoring
+ * it must be done in a lock-free manner, so low level drivers should
+ * keep track of the initial console (if applicable) and may need to
+ * perform direct, unlocked hardware writes in these hooks.
  */
 
 struct fb_ops {
@@ -790,7 +804,7 @@ struct fb_tile_ops {
 /* A driver may set this flag to indicate that it does want a set_par to be
  * called every time when fbcon_switch is executed. The advantage is that with
  * this flag set you can really be sure that set_par is always called before
- * any of the functions dependant on the correct hardware state or altering
+ * any of the functions dependent on the correct hardware state or altering
  * that state, even if you are using some broken X releases. The disadvantage
  * is that it introduces unwanted delays to every console switch if set_par
  * is slow. It is a good idea to try this flag in the drivers initialization
@@ -811,6 +825,10 @@ struct fb_tile_ops {
  * and host endianness. Drivers should not use this flag.
  */
 #define FBINFO_BE_MATH  0x100000
+
+/* report to the VT layer that this fb driver can accept forced console
+   output like oopses */
+#define FBINFO_CAN_FORCE_OUTPUT     0x200000
 
 struct fb_info {
 	int node;
@@ -858,7 +876,7 @@ struct fb_info {
 	void *fbcon_par;                /* fbcon use-only private area */
 	/* From here on everything is device dependent */
 	void *par;
-	/* we need the PCI or similiar aperture base/size not
+	/* we need the PCI or similar aperture base/size not
 	   smem_start/size as smem_start may just be an object
 	   allocated inside the aperture so may not actually overlap */
 	struct apertures_struct {
@@ -1075,6 +1093,7 @@ extern unsigned char *fb_ddc_read(struct i2c_adapter *adapter);
 
 /* drivers/video/modedb.c */
 #define VESA_MODEDB_SIZE 34
+#define CEA_MODEDB_SIZE 65
 extern void fb_var_to_videomode(struct fb_videomode *mode,
 				const struct fb_var_screeninfo *var);
 extern void fb_videomode_to_var(struct fb_var_screeninfo *var,

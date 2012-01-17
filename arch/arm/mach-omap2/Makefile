@@ -119,16 +119,11 @@ obj-$(CONFIG_OMAP3_EMU)			+= emu.o
 obj-$(CONFIG_OMAP_MBOX_FWK)		+= mailbox_mach.o
 mailbox_mach-objs			:= mailbox.o
 
-ifeq ($(CONFIG_OMAP_REMOTE_PROC),y)
-obj-$(CONFIG_ARCH_OMAP4)		+= remoteproc44xx.o
-ifeq ($(CONFIG_SYSLINK_IPU_PM_TRACES),y)
-CFLAGS_ipu_drv.o				+= -DDEBUG
-CFLAGS_ipu_dev.o				+= -DDEBUG
-endif
-obj-$(CONFIG_MPU_SYSLINK_IPC)		+= ipu_drv.o
-obj-$(CONFIG_MPU_SYSLINK_IPC)		+= ipu_dev.o
-obj-$(CONFIG_MPU_SYSLINK_IPC)		+= ipu_utility.o
-endif
+obj-$(CONFIG_OMAP_REMOTE_PROC)		+= remoteproc.o
+
+obj-$(CONFIG_ION_OMAP)			+= omap4_ion.o
+obj-$(CONFIG_ARCH_OMAP4)		+= omap_dmm.o
+
 iommu-y					+= iommu2.o omap-iommu.o
 obj-$(CONFIG_OMAP_IOMMU)		+= $(iommu-y)
 

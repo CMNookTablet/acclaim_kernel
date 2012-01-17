@@ -23,12 +23,12 @@ endif
 obj-$(CONFIG_ARCH_OMAP2) += omap_device.o powerdomain.o
 obj-$(CONFIG_ARCH_OMAP3) += omap_device.o powerdomain.o
 obj-$(CONFIG_ARCH_OMAP4) += omap_device.o powerdomain.o
+obj-$(CONFIG_REMOTE_PROC) += rproc_user.o
 
 obj-$(CONFIG_OMAP_MCBSP) += mcbsp.o
+obj-$(CONFIG_OMAP_RPMSG) += omap_rpmsg.o
 obj-$(CONFIG_OMAP_IOMMU) += iommu.o iovmm.o
 obj-$(CONFIG_OMAP_IOMMU_DEBUG) += iommu-debug.o
-
-obj-$(CONFIG_OMAP_USER_DMM) += dmm_user.o iodmm.o
 
 obj-$(CONFIG_CPU_FREQ) += cpu-omap.o
 obj-$(CONFIG_OMAP_DM_TIMER) += dmtimer.o
@@ -39,7 +39,6 @@ obj-y += $(i2c-omap-m) $(i2c-omap-y)
 
 # OMAP mailbox framework
 obj-$(CONFIG_OMAP_MBOX_FWK) += mailbox.o
-obj-$(CONFIG_OMAP_REMOTE_PROC) += remoteproc.o
 
 obj-$(CONFIG_OMAP_PM_NOOP) += omap-pm-noop.o
 obj-$(CONFIG_OMAP_PM) += omap-pm.o
@@ -47,6 +46,6 @@ obj-$(CONFIG_OMAP_PM) += omap-pm.o
 obj-$(CONFIG_ARCH_OMAP4) += hwspinlock.o
 
 # HDMI audio WA for OMAP4430 ES2.0,1,2 to use Notify module
-ifdef CONFIG_OMAP_HDMI_AUDIO_WA
-ccflags-y += -Iarch/arm/plat-omap/include/syslink
-endif
+#ifdef CONFIG_OMAP_HDMI_AUDIO_WA
+#ccflags-y += -Iarch/arm/plat-omap/include/syslink
+#endif

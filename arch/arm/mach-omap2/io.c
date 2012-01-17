@@ -49,8 +49,9 @@
 #include "dmtimer.h"
 
 #include <mach/tf_mshield.h>
+#include <plat/remoteproc.h>
 
-#include <dspbridge/host_os.h>
+/* #include <dspbridge/host_os.h> */
 
 /*
  * The machine specific code may provide the extra mapping besides the
@@ -260,9 +261,13 @@ static void __init _omap2_map_common_io(void)
 	omap_sram_init();
 	omapfb_reserve_sdram();
 	omap_vram_reserve_sdram();
-	dspbridge_reserve_sdram();
+	omap_ipu_reserve_sdram_memblock();
 
-#ifdef CONFIG_TF_MSHIELD
+#if 0
+	dspbridge_reserve_sdram();
+#endif
+
+#ifdef CONFIG_TF_ZEBRA
 	tf_allocate_workspace();
 #endif
 }

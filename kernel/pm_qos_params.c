@@ -43,20 +43,6 @@
 
 #include <linux/uaccess.h>
 
-/*
- * locking rule: all changes to requests or notifiers lists
- * or pm_qos_object list and pm_qos_objects need to happen with pm_qos_lock
- * held, taken with _irqsave.  One lock to rule them all
- */
-struct pm_qos_request_list {
-	struct list_head list;
-	union {
-		s32 value;
-		s32 usec;
-		s32 kbps;
-	};
-	int pm_qos_class;
-};
 
 static s32 max_compare(s32 v1, s32 v2);
 static s32 min_compare(s32 v1, s32 v2);

@@ -18,6 +18,8 @@
 #include <plat/prcm.h>
 
 #include "powerdomains.h"
+#include "cm2_44xx.h"
+#include "cm1_44xx.h"
 #include "cm44xx.h"
 
 int omap4_pwrdm_set_next_pwrst(struct powerdomain *pwrdm, u8 pwrst)

@@ -1,16 +1,15 @@
 menuconfig OMAP2_DSS
-        tristate "OMAP2/3/4 Display Subsystem support (EXPERIMENTAL)"
-        depends on ARCH_OMAP2 || ARCH_OMAP3 || ARCH_OMAP4
-	default y
+        tristate "OMAP2+ Display Subsystem support (EXPERIMENTAL)"
+        depends on ARCH_OMAP2PLUS
         help
-          OMAP2/3/4 Display Subsystem support.
+	  OMAP2+ Display Subsystem support.
 
 if OMAP2_DSS
 
 config OMAP2_VRAM_SIZE
 	int "VRAM size (MB)"
 	range 0 32
-	default 4
+	default 0
 	help
 	  The amount of SDRAM to reserve at boot time for video RAM use.
 	  This VRAM will be used by omapfb and other drivers that need
@@ -57,15 +56,18 @@ config OMAP2_DSS_RFBI
 
 config OMAP2_DSS_VENC
 	bool "VENC support"
-        default n
+        default y
 	help
 	  OMAP Video Encoder support for S-Video and composite TV-out.
 
-config OMAP2_DSS_HDMI
+config OMAP4_DSS_HDMI
 	bool "HDMI support"
-        default n
+	depends on ARCH_OMAP4
+	select HDMI_TI_4XXX_IP
+        default y
 	help
-	  OMAP HDMI panel support.
+	  HDMI Interface. This adds the High Definition Multimedia Interface.
+	  See http://www.hdmi.org/ for HDMI specification.
 
 config OMAP2_DSS_SDI
 	bool "SDI support"
@@ -89,17 +91,9 @@ config OMAP2_DSS_DSI
 
 	  See http://www.mipi.org/ for DSI spesifications.
 
-config OMAP2_DSS_USE_DSI_PLL
-	bool "Use DSI PLL for PCLK (EXPERIMENTAL)"
-	default n
-	depends on OMAP2_DSS_DSI
-	help
-	  Use DSI PLL to generate pixel clock.  Currently only for DPI output.
-	  DSI PLL can be used to generate higher and more precise pixel clocks.
-
 config OMAP2_DSS_FAKE_VSYNC
 	bool "Fake VSYNC irq from manual update displays"
-	default y
+	default n
 	help
 	  If this is selected, DSI will generate a fake DISPC VSYNC interrupt
 	  when DSI has sent a frame. This is only needed with DSI or RFBI
@@ -109,8 +103,7 @@ config OMAP2_DSS_FAKE_VSYNC
 config OMAP2_DSS_MIN_FCK_PER_PCK
 	int "Minimum FCK/PCK ratio (for scaling)"
 	range 0 32
-	default 4  if ARCH_OMAP2 || ARCH_OMAP3
-	default 0  if ARCH_OMAP4
+	default 0
 	help
 	  This can be used to adjust the minimum FCK/PCK ratio.
 
@@ -124,5 +117,16 @@ config OMAP2_DSS_MIN_FCK_PER_PCK
 
 	  Max FCK is 173MHz, so this doesn't work if your PCK
 	  is very high.
+
+config OMAP2_DSS_SLEEP_AFTER_VENC_RESET
+	bool "Sleep 20ms after VENC reset"
+	default y
+	help
+	  There is a 20ms sleep after VENC reset which seemed to fix the
+	  reset. The reason for the bug is unclear, and it's also unclear
+	  on what platforms this happens.
+
+	  This option enables the sleep, and is enabled by default. You can
+	  disable the sleep if it doesn't cause problems on your platform.
 
 endif

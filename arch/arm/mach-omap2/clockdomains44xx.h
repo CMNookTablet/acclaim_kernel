@@ -27,6 +27,8 @@
 #define __ARCH_ARM_MACH_OMAP2_CLOCKDOMAINS44XX_H
 
 #include <plat/clockdomain.h>
+#include "cm1_44xx.h"
+#include "cm2_44xx.h"
 
 #if defined(CONFIG_ARCH_OMAP4)
 

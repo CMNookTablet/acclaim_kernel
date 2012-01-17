@@ -25,81 +25,16 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/jiffies.h>
-#include <linux/list.h>
 #include <linux/platform_device.h>
-#include <linux/slab.h>
 
-#include <plat/display.h>
-#include <plat/cpu.h>
+#include <video/omapdss.h>
 #include "dss.h"
-
-static LIST_HEAD(display_list);
-
-static struct {
-    struct mutex power_lock;
-} display;
-
-int omapdss_display_enable(struct omap_dss_device *dssdev)
-{
-	int r = 0;
-
-	/* use smart_enable if present */
-	if ((dssdev->driver) && (dssdev->driver->smart_enable))
-		return dssdev->driver->smart_enable(dssdev);
-
-	/* store resume info for suspended displays */
-	switch (dssdev->state) {
-	case OMAP_DSS_DISPLAY_SUSPENDED:
-		dssdev->activate_after_resume = true;
-		break;
-	case OMAP_DSS_DISPLAY_DISABLED:
-		if (dssdev->driver)
-			r = dssdev->driver->enable(dssdev);
-		if (r) {
-			DSSERR("Failed to enable %s device (%d), disabling\n",
-				dssdev->name, r);
-			dssdev->driver->disable(dssdev);
-		}
-		break;
-	default:
-		break;
-	}
-
-	return r;
-}
-EXPORT_SYMBOL(omapdss_display_enable);
-
-void omapdss_display_disable(struct omap_dss_device *dssdev)
-{
-	/* store resume info for suspended displays */
-	switch (dssdev->state) {
-	case OMAP_DSS_DISPLAY_SUSPENDED:
-		dssdev->activate_after_resume = false;
-		break;
-	case OMAP_DSS_DISPLAY_DISABLED:
-		break;
-	default:
-		dssdev->driver->disable(dssdev);
-		break;
-	}
-}
-EXPORT_SYMBOL(omapdss_display_disable);
 
 static ssize_t display_enabled_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
 	struct omap_dss_device *dssdev = to_dss_device(dev);
-	bool enabled;
-
-
-	/* use smart_disable if present */
-	if (dssdev->driver->smart_is_enabled)
-		enabled = dssdev->driver->smart_is_enabled(dssdev);
-	/* show resume info for suspended displays */
-	else if (dssdev->state == OMAP_DSS_DISPLAY_SUSPENDED)
-		enabled = dssdev->activate_after_resume;
-	else
-		enabled  = dssdev->state != OMAP_DSS_DISPLAY_DISABLED;
+	bool enabled = dssdev->state != OMAP_DSS_DISPLAY_DISABLED;
 
 	return snprintf(buf, PAGE_SIZE, "%d\n", enabled);
 }
@@ -109,41 +44,25 @@ static ssize_t display_enabled_store(struct device *dev,
 		const char *buf, size_t size)
 {
 	struct omap_dss_device *dssdev = to_dss_device(dev);
-	unsigned int enabled = simple_strtoul(buf, NULL, 10);
-	int r = 0;
+	int r, enabled;
 
-	if (enabled)
-		r = omapdss_display_enable(dssdev);
-	else
-		omapdss_display_disable(dssdev);
+	r = kstrtoint(buf, 0, &enabled);
+	if (r)
+		return r;
 
-	return r ? r : size;
-}
+	enabled = !!enabled;
 
-static ssize_t display_3d_enabled_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	struct omap_dss_device *dssdev = to_dss_device(dev);
-	bool enabled = false;
+	if (enabled != (dssdev->state != OMAP_DSS_DISPLAY_DISABLED)) {
+		if (enabled) {
+			r = dssdev->driver->enable(dssdev);
+			if (r)
+				return r;
+		} else {
+			dssdev->driver->disable(dssdev);
+		}
+	}
 
-	if (dssdev->driver->get_s3d_enabled)
-		enabled = dssdev->driver->get_s3d_enabled(dssdev);
-
-	return snprintf(buf, PAGE_SIZE, "%d\n", enabled ? 1 : 0);
-}
-
-static ssize_t display_3d_enabled_store(struct device *dev,
-		struct device_attribute *attr,
-		const char *buf, size_t size)
-{
-	struct omap_dss_device *dssdev = to_dss_device(dev);
-	unsigned int enable = simple_strtoul(buf, NULL, 10);
-	int r = 0;
-
-	if (dssdev->driver->enable_s3d)
-		r = dssdev->driver->enable_s3d(dssdev, enable);
-
-	return r ? r : size;
+	return size;
 }
 
 static ssize_t display_upd_mode_show(struct device *dev,
@@ -167,7 +86,9 @@ static ssize_t display_upd_mode_store(struct device *dev,
 	if (!dssdev->driver->set_update_mode)
 		return -EINVAL;
 
-	val = simple_strtoul(buf, NULL, 10);
+	r = kstrtoint(buf, 0, &val);
+	if (r)
+		return r;
 
 	switch (val) {
 	case OMAP_DSS_UPDATE_DISABLED:
@@ -199,13 +120,16 @@ static ssize_t display_tear_store(struct device *dev,
 		struct device_attribute *attr, const char *buf, size_t size)
 {
 	struct omap_dss_device *dssdev = to_dss_device(dev);
-	unsigned long te;
-	int r;
+	int te, r;
 
 	if (!dssdev->driver->enable_te || !dssdev->driver->get_te)
 		return -ENOENT;
 
-	te = simple_strtoul(buf, NULL, 0);
+	r = kstrtoint(buf, 0, &te);
+	if (r)
+		return r;
+
+	te = !!te;
 
 	r = dssdev->driver->enable_te(dssdev, te);
 	if (r)
@@ -282,13 +206,14 @@ static ssize_t display_rotate_store(struct device *dev,
 		struct device_attribute *attr, const char *buf, size_t size)
 {
 	struct omap_dss_device *dssdev = to_dss_device(dev);
-	unsigned long rot;
-	int r;
+	int rot, r;
 
 	if (!dssdev->driver->set_rotate || !dssdev->driver->get_rotate)
 		return -ENOENT;
 
-	rot = simple_strtoul(buf, NULL, 0);
+	r = kstrtoint(buf, 0, &rot);
+	if (r)
+		return r;
 
 	r = dssdev->driver->set_rotate(dssdev, rot);
 	if (r)
@@ -312,13 +237,16 @@ static ssize_t display_mirror_store(struct device *dev,
 		struct device_attribute *attr, const char *buf, size_t size)
 {
 	struct omap_dss_device *dssdev = to_dss_device(dev);
-	unsigned long mirror;
-	int r;
+	int mirror, r;
 
 	if (!dssdev->driver->set_mirror || !dssdev->driver->get_mirror)
 		return -ENOENT;
 
-	mirror = simple_strtoul(buf, NULL, 0);
+	r = kstrtoint(buf, 0, &mirror);
+	if (r)
+		return r;
+
+	mirror = !!mirror;
 
 	r = dssdev->driver->set_mirror(dssdev, mirror);
 	if (r)
@@ -345,14 +273,15 @@ static ssize_t display_wss_store(struct device *dev,
 		struct device_attribute *attr, const char *buf, size_t size)
 {
 	struct omap_dss_device *dssdev = to_dss_device(dev);
-	unsigned long wss;
+	u32 wss;
 	int r;
 
 	if (!dssdev->driver->get_wss || !dssdev->driver->set_wss)
 		return -ENOENT;
 
-	if (strict_strtoul(buf, 0, &wss))
-		return -EINVAL;
+	r = kstrtou32(buf, 0, &wss);
+	if (r)
+		return r;
 
 	if (wss > 0xfffff)
 		return -EINVAL;
@@ -364,110 +293,8 @@ static ssize_t display_wss_store(struct device *dev,
 	return size;
 }
 
-static ssize_t display_device_detect_enabled_store(struct device *dev,
-		struct device_attribute *attr, const char *buf, size_t size)
-{
-	struct omap_dss_device *dssdev = to_dss_device(dev);
-	unsigned long device_detect_enabled;
-
-	if (!dssdev->enable_device_detect || !dssdev->get_device_detect)
-		return -ENOENT;
-
-	if (strict_strtoul(buf, 0, &device_detect_enabled))
-		return -EINVAL;
-
-	dssdev->enable_device_detect(dssdev, device_detect_enabled);
-
-	return size;
-}
-
-static ssize_t display_device_detect_enabled_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	struct omap_dss_device *dssdev = to_dss_device(dev);
-	unsigned int device_detect_enabled;
-
-	if (!dssdev->enable_device_detect || !dssdev->get_device_detect)
-		return -ENOENT;
-
-	device_detect_enabled = dssdev->get_device_detect(dssdev);
-
-	return snprintf(buf, PAGE_SIZE, "%d\n", device_detect_enabled);
-}
-
-static ssize_t display_device_connected_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	struct omap_dss_device *dssdev = to_dss_device(dev);
-	int device_connected;
-
-	if (!dssdev->enable_device_detect ||
-		!dssdev->get_device_detect ||
-		!dssdev->get_device_connected)
-		return -ENOENT;
-
-	device_connected = dssdev->get_device_connected(dssdev);
-
-	if (device_connected == -EINVAL)
-		return -EINVAL;
-
-	return snprintf(buf, PAGE_SIZE, "%d\n", device_connected);
-}
-
-
-static ssize_t display_edid_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	struct omap_dss_device *dssdev = to_dss_device(dev);
-
-
-		if (!dssdev->driver->get_edid)
-		return -ENOENT;
-	dssdev->driver->get_edid(dssdev);
-	return snprintf(buf, PAGE_SIZE, "EDID-Information");
-
-}
-static ssize_t display_custom_edid_timing_store(struct device *dev,
-		struct device_attribute *attr, const char *buf, size_t size)
-{
-	struct omap_dss_device *dssdev = to_dss_device(dev);
-	int val, code, mode;
-	val = simple_strtoul(buf, NULL, 0);
-	code = val / 10;
-	mode = val % 10;
-		if (!dssdev->driver->set_custom_edid_timing_code)
-			return -ENOENT;
-	dssdev->driver->set_custom_edid_timing_code(dssdev, code, mode);
-	return snprintf((char *)buf, PAGE_SIZE, "EDID-Information %d mode % d code", mode, code);
-
-}
-
-static ssize_t display_hpd_enabled_store(struct device *dev,
-		struct device_attribute *attr,
-		const char *buf, size_t size)
-{
-	struct omap_dss_device *dssdev = to_dss_device(dev);
-	bool enabled, r;
-
-	enabled = simple_strtoul(buf, NULL, 10);
-
-	if (enabled != (dssdev->state != OMAP_DSS_DISPLAY_DISABLED)) {
-		if (enabled) {
-			r = dssdev->driver->hpd_enable(dssdev);
-			if (r)
-				return r;
-		} else {
-			dssdev->driver->disable(dssdev);
-		}
-	}
-
-	return size;
-}
-
 static DEVICE_ATTR(enabled, S_IRUGO|S_IWUSR,
 		display_enabled_show, display_enabled_store);
-static DEVICE_ATTR(s3d_enabled, S_IRUGO|S_IWUSR,
-		display_3d_enabled_show, display_3d_enabled_store);
 static DEVICE_ATTR(update_mode, S_IRUGO|S_IWUSR,
 		display_upd_mode_show, display_upd_mode_store);
 static DEVICE_ATTR(tear_elim, S_IRUGO|S_IWUSR,
@@ -480,30 +307,15 @@ static DEVICE_ATTR(mirror, S_IRUGO|S_IWUSR,
 		display_mirror_show, display_mirror_store);
 static DEVICE_ATTR(wss, S_IRUGO|S_IWUSR,
 		display_wss_show, display_wss_store);
-static DEVICE_ATTR(custom_edid_timing, S_IRUGO|S_IWUSR,
-		display_edid_show, display_custom_edid_timing_store);
-static DEVICE_ATTR(hpd_enabled, S_IRUGO|S_IWUSR,
-		NULL, display_hpd_enabled_store);
-static DEVICE_ATTR(device_detect_enabled, S_IRUGO|S_IWUSR,
-		display_device_detect_enabled_show,
-		display_device_detect_enabled_store);
-static DEVICE_ATTR(device_connected, S_IRUGO,
-		display_device_connected_show,
-		NULL);
 
 static struct device_attribute *display_sysfs_attrs[] = {
 	&dev_attr_enabled,
-	&dev_attr_s3d_enabled,
 	&dev_attr_update_mode,
 	&dev_attr_tear_elim,
 	&dev_attr_timings,
 	&dev_attr_rotate,
 	&dev_attr_mirror,
 	&dev_attr_wss,
-	&dev_attr_custom_edid_timing,
-	&dev_attr_hpd_enabled,
-	&dev_attr_device_detect_enabled,
-	&dev_attr_device_connected,
 	NULL
 };
 
@@ -522,14 +334,22 @@ void default_get_overlay_fifo_thresholds(enum omap_plane plane,
 	unsigned burst_size_bytes;
 
 	*burst_size = OMAP_DSS_BURST_16x32;
-	if (cpu_is_omap44xx())
-		burst_size_bytes = 8 * 128 / 8; /* OMAP4: highest
-							burst size is 8x128*/
-	else
-		burst_size_bytes = 16 * 32 / 8;
+	burst_size_bytes = 16 * 32 / 8;
 
 	*fifo_high = fifo_size - 1;
 	*fifo_low = fifo_size - burst_size_bytes;
+}
+
+void omapdss_display_get_dimensions(struct omap_dss_device *dssdev,
+				u32 *width_in_um, u32 *height_in_um)
+{
+	if (dssdev->driver->get_dimensions) {
+		dssdev->driver->get_dimensions(dssdev,
+						width_in_um, width_in_um);
+	} else {
+		*width_in_um = dssdev->panel.width_in_um;
+		*height_in_um = dssdev->panel.height_in_um;
+	}
 }
 
 int omapdss_default_get_recommended_bpp(struct omap_dss_device *dssdev)
@@ -572,13 +392,11 @@ bool dss_use_replication(struct omap_dss_device *dssdev,
 			(dssdev->panel.config & OMAP_DSS_LCD_TFT) == 0)
 		return false;
 
-	if (dssdev->type == OMAP_DISPLAY_TYPE_HDMI)
-		return false;
-
 	switch (dssdev->type) {
 	case OMAP_DISPLAY_TYPE_DPI:
 		bpp = dssdev->phy.dpi.data_lines;
 		break;
+	case OMAP_DISPLAY_TYPE_HDMI:
 	case OMAP_DISPLAY_TYPE_VENC:
 	case OMAP_DISPLAY_TYPE_SDI:
 		bpp = 24;
@@ -600,32 +418,6 @@ void dss_init_device(struct platform_device *pdev,
 	struct device_attribute *attr;
 	int i;
 	int r;
-
-	switch (dssdev->type) {
-#ifdef CONFIG_OMAP2_DSS_DPI
-	case OMAP_DISPLAY_TYPE_DPI:
-#endif
-#ifdef CONFIG_OMAP2_DSS_RFBI
-	case OMAP_DISPLAY_TYPE_DBI:
-#endif
-#ifdef CONFIG_OMAP2_DSS_SDI
-	case OMAP_DISPLAY_TYPE_SDI:
-#endif
-#ifdef CONFIG_OMAP2_DSS_DSI
-	case OMAP_DISPLAY_TYPE_DSI:
-#endif
-#ifdef CONFIG_OMAP2_DSS_VENC
-	case OMAP_DISPLAY_TYPE_VENC:
-#endif
-#ifdef CONFIG_OMAP2_DSS_HDMI
-	case OMAP_DISPLAY_TYPE_HDMI:
-#endif
-		break;
-	default:
-		DSSERR("Support for display '%s' not compiled in.\n",
-				dssdev->name);
-		return;
-	}
 
 	switch (dssdev->type) {
 #ifdef CONFIG_OMAP2_DSS_DPI
@@ -653,19 +445,21 @@ void dss_init_device(struct platform_device *pdev,
 		r = dsi_init_display(dssdev);
 		break;
 #endif
-#ifdef CONFIG_OMAP2_DSS_HDMI
 	case OMAP_DISPLAY_TYPE_HDMI:
 		r = hdmi_init_display(dssdev);
 		break;
-#endif
 	default:
-		BUG();
+		DSSERR("Support for display '%s' not compiled in.\n",
+				dssdev->name);
+		return;
 	}
 
 	if (r) {
 		DSSERR("failed to init display %s\n", dssdev->name);
 		return;
 	}
+
+	BLOCKING_INIT_NOTIFIER_HEAD(&dssdev->state_notifiers);
 
 	/* create device sysfs files */
 	i = 0;
@@ -680,8 +474,6 @@ void dss_init_device(struct platform_device *pdev,
 			dev_name(&dssdev->dev));
 	if (r)
 		DSSERR("failed to create sysfs display link\n");
-
-	mutex_init(&display.power_lock);
 }
 
 void dss_uninit_device(struct platform_device *pdev,
@@ -703,11 +495,6 @@ static int dss_suspend_device(struct device *dev, void *data)
 {
 	int r;
 	struct omap_dss_device *dssdev = to_dss_device(dev);
-
-	/* don't work on suspended displays */
-	if ((dssdev->state == OMAP_DSS_DISPLAY_SUSPENDED) ||
-	    (dssdev->state == OMAP_DSS_DISPLAY_DISABLED))
-		return 0;
 
 	if (dssdev->state != OMAP_DSS_DISPLAY_ACTIVE) {
 		dssdev->activate_after_resume = false;
@@ -734,9 +521,7 @@ int dss_suspend_all_devices(void)
 	int r;
 	struct bus_type *bus = dss_get_bus();
 
-	mutex_lock(&display.power_lock);
 	r = bus_for_each_dev(bus, NULL, NULL, dss_suspend_device);
-	mutex_unlock(&display.power_lock);
 	if (r) {
 		/* resume all displays that were suspended */
 		dss_resume_all_devices();
@@ -751,22 +536,10 @@ static int dss_resume_device(struct device *dev, void *data)
 	int r;
 	struct omap_dss_device *dssdev = to_dss_device(dev);
 
-	/* don't work on non-suspended displays */
-	if ((dssdev->state != OMAP_DSS_DISPLAY_SUSPENDED) &&
-	    (dssdev->state != OMAP_DSS_DISPLAY_DISABLED))
-		return 0;
-
 	if (dssdev->activate_after_resume && dssdev->driver->resume) {
 		r = dssdev->driver->resume(dssdev);
-		if (r) {
-			DSSERR("Failed to resume %s device (%d), disabling\n",
-				dssdev->name, r);
-			dssdev->driver->disable(dssdev);
+		if (r)
 			return r;
-		}
-	} else {
-		/* disabled may not be the same as suspended so call handler */
-		dssdev->driver->disable(dssdev);
 	}
 
 	dssdev->activate_after_resume = false;
@@ -777,80 +550,16 @@ static int dss_resume_device(struct device *dev, void *data)
 int dss_resume_all_devices(void)
 {
 	struct bus_type *bus = dss_get_bus();
-	int r = 0;
 
-	mutex_lock(&display.power_lock);
-	r = bus_for_each_dev(bus, NULL, NULL, dss_resume_device);
-	mutex_unlock(&display.power_lock);
-
-	return r;
-}
-
-static int dss_check_state_disabled(struct device *dev, void *data)
-{
-	struct omap_dss_device *dssdev = to_dss_device(dev);
-
-	if (dssdev->state == OMAP_DSS_DISPLAY_DISABLED ||
-			dssdev->state == OMAP_DSS_DISPLAY_SUSPENDED)
-		return 0;
-	else
-		return -EINVAL;
-}
-
-/*
- * Checks if all devices are suspended/disabled.
- * Disables mainclk (DSS clocks on OMAP4) if true and do_clk_disable is true.
- */
-int dss_mainclk_state_disable(bool do_clk_disable)
-{
-	int r;
-	struct bus_type *bus = dss_get_bus();
-
-	r = bus_for_each_dev(bus, NULL, NULL, dss_check_state_disabled);
-
-	if (r) {
-		/* Some devices are not disabled/suspended */
-		return -EBUSY;
-	} else {
-		if (do_clk_disable) {
-			save_all_ctx();
-			dss_mainclk_disable();
-		}
-		return 0;
-	}
-}
-
-/*
- * enables mainclk (DSS clocks on OMAP4 if any device is enabled.
- * Returns 0 on success.
- */
-int dss_mainclk_state_enable(void)
-{
-	int r;
-	struct bus_type *bus = dss_get_bus();
-
-	r = bus_for_each_dev(bus, NULL, NULL, dss_check_state_disabled);
-
-	if (r) {
-		r = dss_mainclk_enable();
-		if (!r)
-			restore_all_ctx();
-		return r;
-	} else {
-		/* All devices are disabled/suspended */
-		return -EAGAIN;
-	}
+	return bus_for_each_dev(bus, NULL, NULL, dss_resume_device);
 }
 
 static int dss_disable_device(struct device *dev, void *data)
 {
 	struct omap_dss_device *dssdev = to_dss_device(dev);
 
-	if ((dssdev->state == OMAP_DSS_DISPLAY_SUSPENDED) ||
-	    (dssdev->state == OMAP_DSS_DISPLAY_DISABLED))
-		return 0;
-
-	dssdev->driver->disable(dssdev);
+	if (dssdev->state != OMAP_DSS_DISPLAY_DISABLED)
+		dssdev->driver->disable(dssdev);
 
 	return 0;
 }
@@ -858,9 +567,7 @@ static int dss_disable_device(struct device *dev, void *data)
 void dss_disable_all_devices(void)
 {
 	struct bus_type *bus = dss_get_bus();
-	mutex_lock(&display.power_lock);
 	bus_for_each_dev(bus, NULL, NULL, dss_disable_device);
-	mutex_unlock(&display.power_lock);
 }
 
 
@@ -936,50 +643,3 @@ void omap_dss_stop_device(struct omap_dss_device *dssdev)
 }
 EXPORT_SYMBOL(omap_dss_stop_device);
 
-/* since omap_dss_update_size can be called in irq context, schedule work from
- * work-queue to deliver notification to client..
- */
-struct notify_work {
-	struct work_struct work;
-	struct omap_dss_device *dssdev;
-	enum omap_dss_event evt;
-};
-
-static void notify_worker(struct work_struct *work)
-{
-	struct notify_work *nw =
-		container_of(work, struct notify_work, work);
-	struct omap_dss_device *dssdev = nw->dssdev;
-	blocking_notifier_call_chain(&dssdev->notifier, nw->evt, dssdev);
-	kfree(work);
-}
-
-/**
- * Called by lower level driver to notify about a change in resolution, etc.
- */
-void omap_dss_notify(struct omap_dss_device *dssdev, enum omap_dss_event evt)
-{
-	struct notify_work *nw =
-			kmalloc(sizeof(struct notify_work), GFP_KERNEL);
-	if (nw) {
-		INIT_WORK(&nw->work, notify_worker);
-		nw->dssdev = dssdev;
-		nw->evt = evt;
-		schedule_work(&nw->work);
-	}
-}
-EXPORT_SYMBOL(omap_dss_notify);
-
-void omap_dss_add_notify(struct omap_dss_device *dssdev,
-		struct notifier_block *nb)
-{
-	blocking_notifier_chain_register(&dssdev->notifier, nb);
-}
-EXPORT_SYMBOL(omap_dss_add_notify);
-
-void omap_dss_remove_notify(struct omap_dss_device *dssdev,
-		struct notifier_block *nb)
-{
-	blocking_notifier_chain_unregister(&dssdev->notifier, nb);
-}
-EXPORT_SYMBOL(omap_dss_remove_notify);

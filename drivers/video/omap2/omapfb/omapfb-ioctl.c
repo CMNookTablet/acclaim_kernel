@@ -28,7 +28,7 @@
 #include <linux/omapfb.h>
 #include <linux/vmalloc.h>
 
-#include <plat/display.h>
+#include <video/omapdss.h>
 #include <plat/vrfb.h>
 #include <plat/vram.h>
 
@@ -610,6 +610,7 @@ int omapfb_ioctl(struct fb_info *fbi, unsigned int cmd, unsigned long arg)
 		struct omapfb_vram_info		vram_info;
 		struct omapfb_tearsync_info	tearsync_info;
 		struct omapfb_display_info	display_info;
+		u32				crt;
 	} p;
 
 	int r = 0;
@@ -768,6 +769,17 @@ int omapfb_ioctl(struct fb_info *fbi, unsigned int cmd, unsigned long arg)
 			r = -EFAULT;
 		break;
 
+	case FBIO_WAITFORVSYNC:
+		if (get_user(p.crt, (__u32 __user *)arg)) {
+			r = -EFAULT;
+			break;
+		}
+		if (p.crt != 0) {
+			r = -ENODEV;
+			break;
+		}
+		/* FALLTHROUGH */
+
 	case OMAPFB_WAITFORVSYNC:
 		DBG("ioctl WAITFORVSYNC\n");
 		if (!display) {
@@ -871,6 +883,7 @@ int omapfb_ioctl(struct fb_info *fbi, unsigned int cmd, unsigned long arg)
 
 	case OMAPFB_GET_DISPLAY_INFO: {
 		u16 xres, yres;
+		u32 w, h;
 
 		DBG("ioctl GET_DISPLAY_INFO\n");
 
@@ -883,8 +896,10 @@ int omapfb_ioctl(struct fb_info *fbi, unsigned int cmd, unsigned long arg)
 
 		p.display_info.xres = xres;
 		p.display_info.yres = yres;
-		p.display_info.width = 0;
-		p.display_info.height = 0;
+
+		omapdss_display_get_dimensions(display, &w, &h);
+		p.display_info.width = w;
+		p.display_info.height = h;
 
 		if (copy_to_user((void __user *)arg, &p.display_info,
 					sizeof(p.display_info)))

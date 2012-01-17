@@ -1,4 +1,23 @@
+/*
+ * linux/drivers/video/omap2/dss/fifothreshold.c
+ *
+ * Copyright (C) 2011 Texas Instruments
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License version 2 as published by
+ * the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License along with
+ * this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
 #include <linux/kernel.h>
+#include <video/omapdss.h>
 #include "dss.h"
 
 #define YUV422_UYVY     10
@@ -339,7 +358,6 @@ static void sa_calc(struct dispc_config *dispc_reg_config, u32 channel_no,
 	 * buffers allocated.
 	 */
 	i = Tot_mem / pict_16word_ceil;
-	Tot_mem -= pict_16word_ceil * i;
 
 	if (i == 0) {
 		/* LineSize > MemoryLineBufferSize (Valid only for 1D) */
@@ -349,20 +367,27 @@ static void sa_calc(struct dispc_config *dispc_reg_config, u32 channel_no,
 		 * When MemoryLineBufferSize > LineSize >
 		 * (MemoryLineBufferSize/2)
 		 */
-		sa_info->min_sa = pict_16word + C2 * (Tot_mem - 8);
+		sa_info->min_sa = 2 * pict_16word + C2 * (Tot_mem -
+						pict_16word_ceil - 8);
 	} else {
 		/* All other cases */
-		sa_info->min_sa = (4 * (i - 2) + C1) * pict_16word +
-			C2 * (Tot_mem - 8);
+		sa_info->min_sa = i * pict_16word + C1 * pict_16word + C2 *
+				  (Tot_mem - (pict_16word_ceil * i) - 8);
 	}
 
 	/* C2=0:: no partialy filed lines:: Then minLT = 0 */
-	if (C2 == 0)
+	if (C2 == 0) {
 		sa_info->min_lt = 0;
-	else if (bh_config.antifckr == 1 && (C1 == 3 || C1 == 4))
-		sa_info->min_lt = (6 - C1) * pict_16word_ceil + C2 * Tot_mem;
-	else
-		sa_info->min_lt = (C2 - 1) * Tot_mem;
+	} else if (bh_config.antifckr == 1) {
+		if (C1 == 3)
+			sa_info->min_lt = 3 * pict_16word_ceil + C2 * (Tot_mem -
+						(pict_16word_ceil*i));
+		else if (C1 == 4)
+			sa_info->min_lt = 2 * pict_16word_ceil + C2 * (Tot_mem -
+						(pict_16word_ceil*i));
+	} else {
+		sa_info->min_lt = C2 * (Tot_mem - (pict_16word_ceil*i));
+	}
 
 	sa_info->max_lt = max(sa_info->min_sa - 8, sa_info->min_lt + 1);
 }
@@ -389,8 +414,8 @@ u32 sa_calc_wrap(struct dispc_config *dispc_reg_config, u32 channel_no)
 	if (dispc_reg_config->format == 0 && channel_no > 0) {
 		/* SA values calculated for Chroma Frame */
 		sa_calc(dispc_reg_config, channel_no, 0, &sa_info_uv);
-		return 2 * max(min(sa_info_y.min_sa, sa_info_uv.min_sa) - 8,
-			       max(sa_info_y.min_lt, sa_info_uv.min_lt) + 1);
+		return 2 * max(max(sa_info_y.min_sa - 8, sa_info_y.min_lt + 1),
+			       max(sa_info_uv.min_sa - 8, sa_info_uv.min_lt + 1));
 	} else {
 		return sa_info_y.max_lt;
 	}

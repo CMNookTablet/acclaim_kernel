@@ -42,7 +42,10 @@ static struct hsmmc_controller {
 
 static int hsmmc_get_context_loss(struct device *dev)
 {
-	return omap_pm_get_dev_context_loss_count(dev);
+	/* FIXME-HASH: Using real context_loss_function */
+	struct platform_device *pdev;
+	pdev = container_of(dev, struct platform_device, dev);
+	return omap_device_get_context_loss_count(pdev); // omap_pm_get_dev_context_loss_count(dev);
 }
 
 #else

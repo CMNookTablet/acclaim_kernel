@@ -26,6 +26,8 @@
 #include "cm.h"
 #include "cm-regbits-44xx.h"
 
+#define BITFIELD(start, size) ((start) | (((1 << (size)) - 1) << 6))
+
 /**
  * omap4_cm_wait_module_ready - wait for a module to be in 'func' state
  * @clkctrl_reg: CLKCTRL module address

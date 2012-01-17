@@ -26,6 +26,8 @@
 #include <plat/clkdev_omap.h>
 
 #include "clock.h"
+#include "cm2_44xx.h"
+#include "cm1_44xx.h"
 #include "clock44xx.h"
 #include "cm.h"
 #include "cm-regbits-44xx.h"

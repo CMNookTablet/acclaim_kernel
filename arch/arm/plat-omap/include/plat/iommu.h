@@ -33,6 +33,8 @@ struct iommu {
 	struct module	*owner;
 	void __iomem	*regbase;
 	struct device	*dev;
+	void		*isr_priv;
+
 	unsigned int	refcount;
 	struct mutex	iommu_lock;	/* global for this whole object */
 
@@ -42,10 +44,13 @@ struct iommu {
 	 */
 	u32		*iopgd;
 	spinlock_t	page_table_lock; /* protect iopgd */
+
 	int		nr_tlb_entries;
 
 	struct list_head	mmap;
 	struct mutex		mmap_lock; /* protect mmap */
+
+	int (*isr)(struct iommu *obj, u32 da, u32 iommu_errs, void *priv);
 
 	struct raw_notifier_head	notifier;
 
@@ -54,6 +59,8 @@ struct iommu {
 	struct platform_device *pdev;
 	struct list_head event_list;
 	spinlock_t event_lock;
+	void *secure_ttb;
+	bool secure_mode;
 };
 
 struct cr_regs {
@@ -176,6 +183,12 @@ extern void iopgtable_clear_entry_all(struct iommu *obj);
 
 extern struct iommu *iommu_get(const char *name);
 extern void iommu_put(struct iommu *obj);
+extern int iommu_set_isr(const char *name,
+			 int (*isr)(struct iommu *obj, u32 da, u32 iommu_errs,
+				    void *priv),
+			 void *isr_priv);
+
+extern int iommu_set_secure(const char *name, bool enable, void *data);
 
 u32 iommu_save_ctx(struct iommu *obj);
 u32 iommu_restore_ctx(struct iommu *obj);

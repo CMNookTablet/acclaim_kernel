@@ -48,14 +48,14 @@ static struct omap_video_timings boxer_panel_timings = {
 };
 
 struct panel_config {
-	u32 width_in_mm;
-	u32 height_in_mm;
+	u32 width_in_um;
+	u32 height_in_um;
 };
 
 static struct panel_config panel_configs[] = {
 	{
-		.width_in_mm = 153,
-		.height_in_mm = 90,
+		.width_in_um = 153000,
+		.height_in_um = 90000,
 	}
 };
 
@@ -101,8 +101,8 @@ static void boxer_get_timings(struct omap_dss_device *dssdev,
 static void boxer_get_dimension(struct omap_dss_device *dssdev,
 		u32 *width, u32 *height)
 {
-	*width = dssdev->panel.width_in_mm;
-	*height = dssdev->panel.height_in_mm;
+	*width = dssdev->panel.width_in_um;
+	*height = dssdev->panel.height_in_um;
 }
 
 static int boxer_panel_probe(struct omap_dss_device *dssdev)
@@ -123,8 +123,8 @@ static int boxer_panel_probe(struct omap_dss_device *dssdev)
 	 * further changed internally if needed*/
 	panel_config = &panel_configs[0];
 
-	dssdev->panel.width_in_mm = panel_config->width_in_mm;
-	dssdev->panel.height_in_mm = panel_config->height_in_mm;
+	dssdev->panel.width_in_um = panel_config->width_in_um;
+	dssdev->panel.height_in_um = panel_config->height_in_um;
 
 	printk(KERN_INFO " boxer : %s called , line %d\n", __FUNCTION__ , __LINE__);
 	dssdev->panel.config	= OMAP_DSS_LCD_TFT | OMAP_DSS_LCD_IVS |
@@ -295,8 +295,8 @@ static struct omap_dss_driver boxer_driver = {
 	.get_timings    = boxer_get_timings,
 	.set_timings    = dpi_set_timings,
 	.check_timings  = dpi_check_timings,
-	.get_dimension  = boxer_get_dimension,
-	.reset			= boxer_panel_reset,
+//	.get_dimension  = boxer_get_dimension,
+//	.reset			= boxer_panel_reset,
 	.driver		= {
 		.name	= "boxer_panel_drv",
 		.owner	= THIS_MODULE,

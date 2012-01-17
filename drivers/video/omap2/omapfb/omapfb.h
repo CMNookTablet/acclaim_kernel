@@ -29,13 +29,15 @@
 
 #include <linux/rwsem.h>
 
-#include <plat/display.h>
+#include <video/omapdss.h>
 
 #ifdef DEBUG
 extern unsigned int omapfb_debug;
 #define DBG(format, ...) \
-	if (omapfb_debug) \
-		printk(KERN_DEBUG "OMAPFB: " format, ## __VA_ARGS__)
+	do { \
+		if (omapfb_debug) \
+			printk(KERN_DEBUG "OMAPFB: " format, ## __VA_ARGS__); \
+	} while (0)
 #else
 #define DBG(format, ...)
 #endif
@@ -69,7 +71,6 @@ struct omapfb_info {
 	enum omap_dss_rotation_type rotation_type;
 	u8 rotation[OMAPFB_MAX_OVL_PER_FB];
 	bool mirror;
-	bool fit_to_screen;
 };
 
 struct omapfb2_device {

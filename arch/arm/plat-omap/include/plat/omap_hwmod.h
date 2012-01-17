@@ -348,11 +348,14 @@ struct omap_hwmod_omap2_prcm {
  * struct omap_hwmod_omap4_prcm - OMAP4-specific PRCM data
  * @clkctrl_reg: PRCM address of the clock control register
  * @rstctrl_reg: adress of the XXX_RSTCTRL register located in the PRM
+ * @context_reg: addres of the context register
  * @submodule_wkdep_bit: bit shift of the WKDEP range
  */
 struct omap_hwmod_omap4_prcm {
 	void __iomem	*clkctrl_reg;
 	void __iomem	*rstctrl_reg;
+	/* FIXME-HASH: Added from 4AI.4 */
+	void __iomem    *context_reg;
 	u8		submodule_wkdep_bit;
 };
 
@@ -573,6 +576,8 @@ int omap_hwmod_for_each_by_class(const char *classname,
 					   void *user),
 				 void *user);
 
+int omap_hwmod_get_context_loss_count(struct omap_hwmod *oh);
+
 /*
  * Chip variant-specific hwmod init routines - XXX should be converted
  * to use initcalls once the initial boot ordering is straightened out
@@ -581,5 +586,7 @@ extern int omap2420_hwmod_init(void);
 extern int omap2430_hwmod_init(void);
 extern int omap3xxx_hwmod_init(void);
 extern int omap44xx_hwmod_init(void);
+
+extern struct device *omap_hwmod_name_get_dev(const char *oh_name);
 
 #endif

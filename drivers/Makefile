@@ -19,6 +19,7 @@ obj-$(CONFIG_PNP)		+= pnp/
 obj-$(CONFIG_ARM_AMBA)		+= amba/
 
 obj-$(CONFIG_VIRTIO)		+= virtio/
+obj-$(CONFIG_RPMSG)		+= rpmsg/
 obj-$(CONFIG_XEN)		+= xen/
 
 # regulators early, since some subsystems rely on them to initialize
@@ -75,7 +76,6 @@ obj-$(CONFIG_INPUT)		+= input/
 obj-$(CONFIG_I2O)		+= message/
 obj-$(CONFIG_RTC_LIB)		+= rtc/
 obj-y				+= i2c/ media/
-obj-$(CONFIG_MPU_BRIDGE)        += dsp/bridge/
 obj-$(CONFIG_PPS)		+= pps/
 obj-$(CONFIG_W1)		+= w1/
 obj-$(CONFIG_POWER_SUPPLY)	+= power/
@@ -115,12 +115,7 @@ obj-$(CONFIG_VLYNQ)		+= vlynq/
 obj-$(CONFIG_STAGING)		+= staging/
 obj-y				+= platform/
 obj-y				+= ieee802154/
-obj-$(CONFIG_SYSLINK_DUCATI_PM) += dsp/syslink/multicore_ipc/
-obj-$(CONFIG_MPU_SYSLINK_PLATFORM)   += dsp/syslink/multicore_ipc/
-obj-$(CONFIG_MPU_SYSLINK_IPC)   += dsp/syslink/multicore_ipc/
-obj-$(CONFIG_SYSLINK_PROC)      += dsp/syslink/procmgr/
-obj-$(CONFIG_SYSLINK_PROC4430)  += dsp/syslink/procmgr/proc4430/
-obj-$(CONFIG_OMAP_DEVICE_HANDLER)	+= dsp/syslink/devh/
-obj-$(CONFIG_OMAP_DEVICE_HANDLER)	+= dsp/syslink/devh/44xx/
+obj-$(CONFIG_REMOTE_PROC)	+= remoteproc/
+
 obj-$(CONFIG_DMM_OMAP)		+= media/
-obj-$(CONFIG_TILER_OMAP)		+= media/
+obj-$(CONFIG_TILER_OMAP)	+= media/

@@ -1125,7 +1125,7 @@ static int vidioc_streamoff(struct file *file, void *fh,
 			enum v4l2_buf_type i)
 {
 	struct v4gfx_device *vout = fh;
-	int rv = 0;
+	int rv;
 
 	mutex_lock(&vout->lock);
 	if (!vout->streaming) {

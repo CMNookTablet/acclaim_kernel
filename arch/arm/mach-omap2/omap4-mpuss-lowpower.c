@@ -57,8 +57,10 @@
 
 #include "pm.h"
 #include "cm.h"
+#include "cm1_44xx.h"
+#include "cm2_44xx.h"
 #include "prm.h"
-#include "cm44xx.h"
+//#include "cm44xx.h"
 #include "prm44xx.h"
 #include "prcm-common.h"
 

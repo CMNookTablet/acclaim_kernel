@@ -398,8 +398,11 @@ u64 __init __memblock_alloc_base(u64 size, u64 align, u64 max_addr)
 
 	/* On some platforms, make sure we allocate lowmem */
 	/* Note that MEMBLOCK_REAL_LIMIT may be MEMBLOCK_ALLOC_ANYWHERE */
+	/* FIXME-HASH: Removed this check it's done later */
+#if 0
 	if (max_addr == MEMBLOCK_ALLOC_ANYWHERE)
 		max_addr = MEMBLOCK_REAL_LIMIT;
+#endif
 
 	for (i = memblock.memory.cnt - 1; i >= 0; i--) {
 		u64 memblockbase = memblock.memory.region[i].base;

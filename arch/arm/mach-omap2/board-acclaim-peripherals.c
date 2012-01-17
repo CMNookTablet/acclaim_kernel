@@ -53,6 +53,7 @@
 #include <linux/wakelock.h>
 #include <plat/opp_twl_tps.h>
 #include <plat/mmc.h>
+#include <plat/remoteproc.h>
 #include <plat/omap4-keypad.h>
 #include <plat/hwspinlock.h>
 
@@ -60,7 +61,7 @@
 #include "hsmmc.h"
 #include "smartreflex-class3.h"
 #include "board-4430sdp-wifi.h"
-
+#include "omap4_ion.h"
 #include <linux/skbuff.h>
 #include <linux/ti_wilink_st.h>
 

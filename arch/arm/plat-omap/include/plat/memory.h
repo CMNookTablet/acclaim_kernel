@@ -43,6 +43,15 @@
 #endif
 
 /*
+ * Physical DRAM offset.
+ */
+#if defined(CONFIG_ARCH_OMAP1)
+#define PLAT_PHYS_OFFSET		UL(0x10000000)
+#else
+#define PLAT_PHYS_OFFSET		UL(0x80000000)
+#endif
+
+/*
  * Bus address is physical address, except for OMAP-1510 Local Bus.
  * OMAP-1510 bus address is translated into a Local Bus address if the
  * OMAP bus type is lbus. We do the address translation based on the

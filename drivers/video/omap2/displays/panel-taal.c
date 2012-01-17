@@ -33,8 +33,8 @@
 #include <linux/regulator/consumer.h>
 #include <linux/mutex.h>
 
-#include <plat/display.h>
-#include <plat/nokia-dsi-panel.h>
+#include <video/omapdss.h>
+#include <video/omap-panel-nokia-dsi.h>
 
 /* DSI Virtual channel. Hardcoded for now. */
 #define TCH 0
@@ -63,12 +63,11 @@
 #define DCS_GET_ID2		0xdb
 #define DCS_GET_ID3		0xdc
 
-#define TAAL_ESD_CHECK_PERIOD	msecs_to_jiffies(5000)
-
 static irqreturn_t taal_te_isr(int irq, void *data);
-static irqreturn_t taal_te_isr2(int irq, void *data);
 static void taal_te_timeout_work_callback(struct work_struct *work);
 static int _taal_enable_te(struct omap_dss_device *dssdev, bool enable);
+
+static int taal_panel_reset(struct omap_dss_device *dssdev);
 
 struct panel_regulator {
 	struct regulator *regulator;
@@ -167,8 +166,6 @@ struct panel_config {
 
 	struct panel_regulator *regulators;
 	int num_regulators;
-	u32 width_in_mm;
-	u32 height_in_mm;
 };
 
 enum {
@@ -193,29 +190,7 @@ static struct panel_config panel_configs[] = {
 			.high		= 10,
 			.low		= 10,
 		},
-		.width_in_mm = 84,
-		.height_in_mm = 47,
 	},
-       {
-                .name           = "taal2",
-                .type           = PANEL_TAAL,
-                .timings        = {
-                        .x_res          = 864,
-                        .y_res          = 480,
-                },
-                .sleep          = {
-                        .sleep_in       = 5,
-                        .sleep_out      = 5,
-                        .hw_reset       = 5,
-                        .enable_te      = 100, /* possible panel bug */
-                },
-                .reset_sequence = {
-                        .high           = 10,
-                        .low            = 10,
-                },
-		.width_in_mm = 84,
-		.height_in_mm = 47,
-        },
 };
 
 struct taal_data {
@@ -243,6 +218,8 @@ struct taal_data {
 		u16 w;
 		u16 h;
 	} update_region;
+	int channel;
+
 	struct delayed_work te_timeout_work;
 
 	bool use_dsi_bl;
@@ -252,8 +229,14 @@ struct taal_data {
 
 	bool intro_printed;
 
-	struct workqueue_struct *esd_wq;
+	struct workqueue_struct *workqueue;
+
 	struct delayed_work esd_work;
+	unsigned esd_interval;
+
+	bool ulps_enabled;
+	unsigned ulps_timeout;
+	struct delayed_work ulps_work;
 
 	struct panel_config *panel_config;
 };
@@ -265,6 +248,7 @@ static inline struct nokia_dsi_panel_data
 }
 
 static void taal_esd_work(struct work_struct *work);
+static void taal_ulps_work(struct work_struct *work);
 
 static void hw_guard_start(struct taal_data *td, int guard_msec)
 {
@@ -282,12 +266,12 @@ static void hw_guard_wait(struct taal_data *td)
 	}
 }
 
-static int taal_dcs_read_1(enum omap_dsi_index ix, u8 dcs_cmd, u8 *data)
+static int taal_dcs_read_1(struct taal_data *td, u8 dcs_cmd, u8 *data)
 {
 	int r;
 	u8 buf[1];
 
-	r = dsi_vc_dcs_read(ix, TCH, dcs_cmd, buf, 1);
+	r = dsi_vc_dcs_read(td->dssdev, td->channel, dcs_cmd, buf, 1);
 
 	if (r < 0)
 		return r;
@@ -297,20 +281,20 @@ static int taal_dcs_read_1(enum omap_dsi_index ix, u8 dcs_cmd, u8 *data)
 	return 0;
 }
 
-static int taal_dcs_write_0(enum omap_dsi_index ix, u8 dcs_cmd)
+static int taal_dcs_write_0(struct taal_data *td, u8 dcs_cmd)
 {
-	return dsi_vc_dcs_write(ix, TCH, &dcs_cmd, 1);
+	return dsi_vc_dcs_write(td->dssdev, td->channel, &dcs_cmd, 1);
 }
 
-static int taal_dcs_write_1(enum omap_dsi_index ix, u8 dcs_cmd, u8 param)
+static int taal_dcs_write_1(struct taal_data *td, u8 dcs_cmd, u8 param)
 {
 	u8 buf[2];
 	buf[0] = dcs_cmd;
 	buf[1] = param;
-	return dsi_vc_dcs_write(ix, TCH, buf, 2);
+	return dsi_vc_dcs_write(td->dssdev, td->channel, buf, 2);
 }
 
-static int taal_sleep_in(enum omap_dsi_index ix, struct taal_data *td)
+static int taal_sleep_in(struct taal_data *td)
 
 {
 	u8 cmd;
@@ -319,7 +303,7 @@ static int taal_sleep_in(enum omap_dsi_index ix, struct taal_data *td)
 	hw_guard_wait(td);
 
 	cmd = DCS_SLEEP_IN;
-	r = dsi_vc_dcs_write_nosync(ix, TCH, &cmd, 1);
+	r = dsi_vc_dcs_write_nosync(td->dssdev, td->channel, &cmd, 1);
 	if (r)
 		return r;
 
@@ -331,13 +315,13 @@ static int taal_sleep_in(enum omap_dsi_index ix, struct taal_data *td)
 	return 0;
 }
 
-static int taal_sleep_out(enum omap_dsi_index ix, struct taal_data *td)
+static int taal_sleep_out(struct taal_data *td)
 {
 	int r;
 
 	hw_guard_wait(td);
 
-	r = taal_dcs_write_0(ix, DCS_SLEEP_OUT);
+	r = taal_dcs_write_0(td, DCS_SLEEP_OUT);
 	if (r)
 		return r;
 
@@ -349,32 +333,30 @@ static int taal_sleep_out(enum omap_dsi_index ix, struct taal_data *td)
 	return 0;
 }
 
-static int taal_get_id(enum omap_dsi_index ix,
-	u8 *id1, u8 *id2, u8 *id3)
+static int taal_get_id(struct taal_data *td, u8 *id1, u8 *id2, u8 *id3)
 {
 	int r;
 
-	r = taal_dcs_read_1(ix, DCS_GET_ID1, id1);
+	r = taal_dcs_read_1(td, DCS_GET_ID1, id1);
 	if (r)
 		return r;
-	r = taal_dcs_read_1(ix, DCS_GET_ID2, id2);
+	r = taal_dcs_read_1(td, DCS_GET_ID2, id2);
 	if (r)
 		return r;
-	r = taal_dcs_read_1(ix, DCS_GET_ID3, id3);
+	r = taal_dcs_read_1(td, DCS_GET_ID3, id3);
 	if (r)
 		return r;
 
 	return 0;
 }
 
-static int taal_set_addr_mode(enum omap_dsi_index ix,
-	u8 rotate, bool mirror)
+static int taal_set_addr_mode(struct taal_data *td, u8 rotate, bool mirror)
 {
 	int r;
 	u8 mode;
 	int b5, b6, b7;
 
-	r = taal_dcs_read_1(ix, DCS_READ_MADCTL, &mode);
+	r = taal_dcs_read_1(td, DCS_READ_MADCTL, &mode);
 	if (r)
 		return r;
 
@@ -408,13 +390,13 @@ static int taal_set_addr_mode(enum omap_dsi_index ix,
 	mode &= ~((1<<7) | (1<<6) | (1<<5));
 	mode |= (b7 << 7) | (b6 << 6) | (b5 << 5);
 
-	return taal_dcs_write_1(ix, DCS_MEM_ACC_CTRL, mode);
+	return taal_dcs_write_1(td, DCS_MEM_ACC_CTRL, mode);
 }
 
-static int taal_set_update_window(enum omap_dsi_index ix,
-	u16 x, u16 y, u16 w, u16 h)
+static int taal_set_update_window(struct taal_data *td,
+		u16 x, u16 y, u16 w, u16 h)
 {
-	int r = 0;
+	int r;
 	u16 x1 = x;
 	u16 x2 = x + w - 1;
 	u16 y1 = y;
@@ -427,7 +409,7 @@ static int taal_set_update_window(enum omap_dsi_index ix,
 	buf[3] = (x2 >> 8) & 0xff;
 	buf[4] = (x2 >> 0) & 0xff;
 
-	r = dsi_vc_dcs_write_nosync(ix, TCH, buf, sizeof(buf));
+	r = dsi_vc_dcs_write_nosync(td->dssdev, td->channel, buf, sizeof(buf));
 	if (r)
 		return r;
 
@@ -437,13 +419,136 @@ static int taal_set_update_window(enum omap_dsi_index ix,
 	buf[3] = (y2 >> 8) & 0xff;
 	buf[4] = (y2 >> 0) & 0xff;
 
-	r = dsi_vc_dcs_write_nosync(ix, TCH, buf, sizeof(buf));
+	r = dsi_vc_dcs_write_nosync(td->dssdev, td->channel, buf, sizeof(buf));
 	if (r)
 		return r;
 
-	dsi_vc_send_bta_sync(ix, TCH);
+	dsi_vc_send_bta_sync(td->dssdev, td->channel);
 
 	return r;
+}
+
+static void taal_queue_esd_work(struct omap_dss_device *dssdev)
+{
+	struct taal_data *td = dev_get_drvdata(&dssdev->dev);
+
+	if (td->esd_interval > 0)
+		queue_delayed_work(td->workqueue, &td->esd_work,
+				msecs_to_jiffies(td->esd_interval));
+}
+
+static void taal_cancel_esd_work(struct omap_dss_device *dssdev)
+{
+	struct taal_data *td = dev_get_drvdata(&dssdev->dev);
+
+	cancel_delayed_work(&td->esd_work);
+}
+
+static void taal_queue_ulps_work(struct omap_dss_device *dssdev)
+{
+	struct taal_data *td = dev_get_drvdata(&dssdev->dev);
+
+	if (td->ulps_timeout > 0)
+		queue_delayed_work(td->workqueue, &td->ulps_work,
+				msecs_to_jiffies(td->ulps_timeout));
+}
+
+static void taal_cancel_ulps_work(struct omap_dss_device *dssdev)
+{
+	struct taal_data *td = dev_get_drvdata(&dssdev->dev);
+
+	cancel_delayed_work(&td->ulps_work);
+}
+
+static int taal_enter_ulps(struct omap_dss_device *dssdev)
+{
+	struct taal_data *td = dev_get_drvdata(&dssdev->dev);
+	struct nokia_dsi_panel_data *panel_data = get_panel_data(dssdev);
+	int r;
+
+	if (td->ulps_enabled)
+		return 0;
+
+	taal_cancel_ulps_work(dssdev);
+
+	r = _taal_enable_te(dssdev, false);
+	if (r)
+		goto err;
+
+	disable_irq(gpio_to_irq(panel_data->ext_te_gpio));
+
+	omapdss_dsi_display_disable(dssdev, false, true);
+
+	td->ulps_enabled = true;
+
+	return 0;
+
+err:
+	dev_err(&dssdev->dev, "enter ULPS failed");
+	taal_panel_reset(dssdev);
+
+	td->ulps_enabled = false;
+
+	taal_queue_ulps_work(dssdev);
+
+	return r;
+}
+
+static int taal_exit_ulps(struct omap_dss_device *dssdev)
+{
+	struct taal_data *td = dev_get_drvdata(&dssdev->dev);
+	struct nokia_dsi_panel_data *panel_data = get_panel_data(dssdev);
+	int r;
+
+	if (!td->ulps_enabled)
+		return 0;
+
+	r = omapdss_dsi_display_enable(dssdev);
+	if (r) {
+		dev_err(&dssdev->dev, "failed to enable DSI\n");
+		goto err1;
+	}
+
+	omapdss_dsi_vc_enable_hs(dssdev, td->channel, true);
+
+	r = _taal_enable_te(dssdev, true);
+	if (r) {
+		dev_err(&dssdev->dev, "failed to re-enable TE");
+		goto err2;
+	}
+
+	enable_irq(gpio_to_irq(panel_data->ext_te_gpio));
+
+	taal_queue_ulps_work(dssdev);
+
+	td->ulps_enabled = false;
+
+	return 0;
+
+err2:
+	dev_err(&dssdev->dev, "failed to exit ULPS");
+
+	r = taal_panel_reset(dssdev);
+	if (!r) {
+		enable_irq(gpio_to_irq(panel_data->ext_te_gpio));
+		td->ulps_enabled = false;
+	}
+err1:
+	taal_queue_ulps_work(dssdev);
+
+	return r;
+}
+
+static int taal_wake_up(struct omap_dss_device *dssdev)
+{
+	struct taal_data *td = dev_get_drvdata(&dssdev->dev);
+
+	if (td->ulps_enabled)
+		return taal_exit_ulps(dssdev);
+
+	taal_cancel_ulps_work(dssdev);
+	taal_queue_ulps_work(dssdev);
+	return 0;
 }
 
 static int taal_bl_update_status(struct backlight_device *dev)
@@ -453,9 +558,6 @@ static int taal_bl_update_status(struct backlight_device *dev)
 	struct nokia_dsi_panel_data *panel_data = get_panel_data(dssdev);
 	int r;
 	int level;
-	enum omap_dsi_index ix;
-
-	ix = (dssdev->channel == OMAP_DSS_CHANNEL_LCD) ? DSI1 : DSI2;
 
 	if (dev->props.fb_blank == FB_BLANK_UNBLANK &&
 			dev->props.power == FB_BLANK_UNBLANK)
@@ -469,9 +571,13 @@ static int taal_bl_update_status(struct backlight_device *dev)
 
 	if (td->use_dsi_bl) {
 		if (td->enabled) {
-			dsi_bus_lock(ix);
-			r = taal_dcs_write_1(ix, DCS_BRIGHTNESS, level);
-			dsi_bus_unlock(ix);
+			dsi_bus_lock(dssdev);
+
+			r = taal_wake_up(dssdev);
+			if (!r)
+				r = taal_dcs_write_1(td, DCS_BRIGHTNESS, level);
+
+			dsi_bus_unlock(dssdev);
 		} else {
 			r = 0;
 		}
@@ -496,7 +602,7 @@ static int taal_bl_get_intensity(struct backlight_device *dev)
 	return 0;
 }
 
-static struct backlight_ops taal_bl_ops = {
+static const struct backlight_ops taal_bl_ops = {
 	.get_brightness = taal_bl_get_intensity,
 	.update_status  = taal_bl_update_status,
 };
@@ -505,29 +611,6 @@ static void taal_get_timings(struct omap_dss_device *dssdev,
 			struct omap_video_timings *timings)
 {
 	*timings = dssdev->panel.timings;
-}
-
-static void taal_set_timings(struct omap_dss_device *dssdev,
-			struct omap_video_timings *timings)
-{
-	dssdev->panel.timings.x_res = timings->x_res;
-	dssdev->panel.timings.y_res = timings->y_res;
-	dssdev->panel.timings.pixel_clock = timings->pixel_clock;
-	dssdev->panel.timings.hsw = timings->hsw;
-	dssdev->panel.timings.hfp = timings->hfp;
-	dssdev->panel.timings.hbp = timings->hbp;
-	dssdev->panel.timings.vsw = timings->vsw;
-	dssdev->panel.timings.vfp = timings->vfp;
-	dssdev->panel.timings.vbp = timings->vbp;
-}
-
-static int taal_check_timings(struct omap_dss_device *dssdev,
-			struct omap_video_timings *timings)
-{
-	if (timings->x_res != 864 || timings->y_res != 480)
-		return -EINVAL;
-
-	return 0;
 }
 
 static void taal_get_resolution(struct omap_dss_device *dssdev,
@@ -544,13 +627,6 @@ static void taal_get_resolution(struct omap_dss_device *dssdev,
 	}
 }
 
-static void taal_get_dimension(struct omap_dss_device *dssdev,
-		u32 *width, u32 *height)
-{
-	*width = dssdev->panel.width_in_mm;
-	*height = dssdev->panel.height_in_mm;
-}
-
 static ssize_t taal_num_errors_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
@@ -558,16 +634,17 @@ static ssize_t taal_num_errors_show(struct device *dev,
 	struct taal_data *td = dev_get_drvdata(&dssdev->dev);
 	u8 errors;
 	int r;
-	enum omap_dsi_index ix;
-
-	ix = (dssdev->channel == OMAP_DSS_CHANNEL_LCD) ? DSI1 : DSI2;
 
 	mutex_lock(&td->lock);
 
 	if (td->enabled) {
-		dsi_bus_lock(ix);
-		r = taal_dcs_read_1(ix, DCS_READ_NUM_ERRORS, &errors);
-		dsi_bus_unlock(ix);
+		dsi_bus_lock(dssdev);
+
+		r = taal_wake_up(dssdev);
+		if (!r)
+			r = taal_dcs_read_1(td, DCS_READ_NUM_ERRORS, &errors);
+
+		dsi_bus_unlock(dssdev);
 	} else {
 		r = -ENODEV;
 	}
@@ -587,16 +664,17 @@ static ssize_t taal_hw_revision_show(struct device *dev,
 	struct taal_data *td = dev_get_drvdata(&dssdev->dev);
 	u8 id1, id2, id3;
 	int r;
-	enum omap_dsi_index ix;
-
-	ix = (dssdev->channel == OMAP_DSS_CHANNEL_LCD) ? DSI1 : DSI2;
 
 	mutex_lock(&td->lock);
 
 	if (td->enabled) {
-		dsi_bus_lock(ix);
-		r = taal_get_id(ix, &id1, &id2, &id3);
-		dsi_bus_unlock(ix);
+		dsi_bus_lock(dssdev);
+
+		r = taal_wake_up(dssdev);
+		if (!r)
+			r = taal_get_id(td, &id1, &id2, &id3);
+
+		dsi_bus_unlock(dssdev);
 	} else {
 		r = -ENODEV;
 	}
@@ -643,9 +721,7 @@ static ssize_t store_cabc_mode(struct device *dev,
 	struct omap_dss_device *dssdev = to_dss_device(dev);
 	struct taal_data *td = dev_get_drvdata(&dssdev->dev);
 	int i;
-	enum omap_dsi_index ix;
-
-	ix = (dssdev->channel == OMAP_DSS_CHANNEL_LCD) ? DSI1 : DSI2;
+	int r;
 
 	for (i = 0; i < ARRAY_SIZE(cabc_modes); i++) {
 		if (sysfs_streq(cabc_modes[i], buf))
@@ -658,10 +734,19 @@ static ssize_t store_cabc_mode(struct device *dev,
 	mutex_lock(&td->lock);
 
 	if (td->enabled) {
-		dsi_bus_lock(ix);
-		if (!td->cabc_broken)
-			taal_dcs_write_1(ix, DCS_WRITE_CABC, i);
-		dsi_bus_unlock(ix);
+		dsi_bus_lock(dssdev);
+
+		if (!td->cabc_broken) {
+			r = taal_wake_up(dssdev);
+			if (r)
+				goto err;
+
+			r = taal_dcs_write_1(td, DCS_WRITE_CABC, i);
+			if (r)
+				goto err;
+		}
+
+		dsi_bus_unlock(dssdev);
 	}
 
 	td->cabc_mode = i;
@@ -669,6 +754,10 @@ static ssize_t store_cabc_mode(struct device *dev,
 	mutex_unlock(&td->lock);
 
 	return count;
+err:
+	dsi_bus_unlock(dssdev);
+	mutex_unlock(&td->lock);
+	return r;
 }
 
 static ssize_t show_cabc_available_modes(struct device *dev,
@@ -687,18 +776,161 @@ static ssize_t show_cabc_available_modes(struct device *dev,
 	return len < PAGE_SIZE ? len : PAGE_SIZE - 1;
 }
 
+static ssize_t taal_store_esd_interval(struct device *dev,
+		struct device_attribute *attr,
+		const char *buf, size_t count)
+{
+	struct omap_dss_device *dssdev = to_dss_device(dev);
+	struct taal_data *td = dev_get_drvdata(&dssdev->dev);
+
+	unsigned long t;
+	int r;
+
+	r = strict_strtoul(buf, 10, &t);
+	if (r)
+		return r;
+
+	mutex_lock(&td->lock);
+	taal_cancel_esd_work(dssdev);
+	td->esd_interval = t;
+	if (td->enabled)
+		taal_queue_esd_work(dssdev);
+	mutex_unlock(&td->lock);
+
+	return count;
+}
+
+static ssize_t taal_show_esd_interval(struct device *dev,
+		struct device_attribute *attr,
+		char *buf)
+{
+	struct omap_dss_device *dssdev = to_dss_device(dev);
+	struct taal_data *td = dev_get_drvdata(&dssdev->dev);
+	unsigned t;
+
+	mutex_lock(&td->lock);
+	t = td->esd_interval;
+	mutex_unlock(&td->lock);
+
+	return snprintf(buf, PAGE_SIZE, "%u\n", t);
+}
+
+static ssize_t taal_store_ulps(struct device *dev,
+		struct device_attribute *attr,
+		const char *buf, size_t count)
+{
+	struct omap_dss_device *dssdev = to_dss_device(dev);
+	struct taal_data *td = dev_get_drvdata(&dssdev->dev);
+	unsigned long t;
+	int r;
+
+	r = strict_strtoul(buf, 10, &t);
+	if (r)
+		return r;
+
+	mutex_lock(&td->lock);
+
+	if (td->enabled) {
+		dsi_bus_lock(dssdev);
+
+		if (t)
+			r = taal_enter_ulps(dssdev);
+		else
+			r = taal_wake_up(dssdev);
+
+		dsi_bus_unlock(dssdev);
+	}
+
+	mutex_unlock(&td->lock);
+
+	if (r)
+		return r;
+
+	return count;
+}
+
+static ssize_t taal_show_ulps(struct device *dev,
+		struct device_attribute *attr,
+		char *buf)
+{
+	struct omap_dss_device *dssdev = to_dss_device(dev);
+	struct taal_data *td = dev_get_drvdata(&dssdev->dev);
+	unsigned t;
+
+	mutex_lock(&td->lock);
+	t = td->ulps_enabled;
+	mutex_unlock(&td->lock);
+
+	return snprintf(buf, PAGE_SIZE, "%u\n", t);
+}
+
+static ssize_t taal_store_ulps_timeout(struct device *dev,
+		struct device_attribute *attr,
+		const char *buf, size_t count)
+{
+	struct omap_dss_device *dssdev = to_dss_device(dev);
+	struct taal_data *td = dev_get_drvdata(&dssdev->dev);
+	unsigned long t;
+	int r;
+
+	r = strict_strtoul(buf, 10, &t);
+	if (r)
+		return r;
+
+	mutex_lock(&td->lock);
+	td->ulps_timeout = t;
+
+	if (td->enabled) {
+		/* taal_wake_up will restart the timer */
+		dsi_bus_lock(dssdev);
+		r = taal_wake_up(dssdev);
+		dsi_bus_unlock(dssdev);
+	}
+
+	mutex_unlock(&td->lock);
+
+	if (r)
+		return r;
+
+	return count;
+}
+
+static ssize_t taal_show_ulps_timeout(struct device *dev,
+		struct device_attribute *attr,
+		char *buf)
+{
+	struct omap_dss_device *dssdev = to_dss_device(dev);
+	struct taal_data *td = dev_get_drvdata(&dssdev->dev);
+	unsigned t;
+
+	mutex_lock(&td->lock);
+	t = td->ulps_timeout;
+	mutex_unlock(&td->lock);
+
+	return snprintf(buf, PAGE_SIZE, "%u\n", t);
+}
+
 static DEVICE_ATTR(num_dsi_errors, S_IRUGO, taal_num_errors_show, NULL);
 static DEVICE_ATTR(hw_revision, S_IRUGO, taal_hw_revision_show, NULL);
 static DEVICE_ATTR(cabc_mode, S_IRUGO | S_IWUSR,
 		show_cabc_mode, store_cabc_mode);
 static DEVICE_ATTR(cabc_available_modes, S_IRUGO,
 		show_cabc_available_modes, NULL);
+static DEVICE_ATTR(esd_interval, S_IRUGO | S_IWUSR,
+		taal_show_esd_interval, taal_store_esd_interval);
+static DEVICE_ATTR(ulps, S_IRUGO | S_IWUSR,
+		taal_show_ulps, taal_store_ulps);
+static DEVICE_ATTR(ulps_timeout, S_IRUGO | S_IWUSR,
+		taal_show_ulps_timeout, taal_store_ulps_timeout);
 
 static struct attribute *taal_attrs[] = {
 	&dev_attr_num_dsi_errors.attr,
 	&dev_attr_hw_revision.attr,
 	&dev_attr_cabc_mode.attr,
 	&dev_attr_cabc_available_modes.attr,
+	&dev_attr_esd_interval.attr,
+	&dev_attr_ulps.attr,
+	&dev_attr_ulps_timeout.attr,
 	NULL,
 };
 
@@ -759,8 +991,6 @@ static int taal_probe(struct omap_dss_device *dssdev)
 	dssdev->panel.config = OMAP_DSS_LCD_TFT;
 	dssdev->panel.timings = panel_config->timings;
 	dssdev->ctrl.pixel_size = 24;
-	dssdev->panel.width_in_mm = panel_config->width_in_mm;
-	dssdev->panel.height_in_mm = panel_config->height_in_mm;
 
 	td = kzalloc(sizeof(*td), GFP_KERNEL);
 	if (!td) {
@@ -769,6 +999,9 @@ static int taal_probe(struct omap_dss_device *dssdev)
 	}
 	td->dssdev = dssdev;
 	td->panel_config = panel_config;
+	td->esd_interval = panel_data->esd_interval;
+	td->ulps_enabled = false;
+	td->ulps_timeout = panel_data->ulps_timeout;
 
 	mutex_init(&td->lock);
 
@@ -779,13 +1012,14 @@ static int taal_probe(struct omap_dss_device *dssdev)
 	if (r)
 		goto err_reg;
 
-	td->esd_wq = create_singlethread_workqueue("taal_esd");
-	if (td->esd_wq == NULL) {
+	td->workqueue = create_singlethread_workqueue("taal_esd");
+	if (td->workqueue == NULL) {
 		dev_err(&dssdev->dev, "can't create ESD workqueue\n");
 		r = -ENOMEM;
 		goto err_wq;
 	}
 	INIT_DELAYED_WORK_DEFERRABLE(&td->esd_work, taal_esd_work);
+	INIT_DELAYED_WORK(&td->ulps_work, taal_ulps_work);
 
 	dev_set_drvdata(&dssdev->dev, td);
 
@@ -802,9 +1036,9 @@ static int taal_probe(struct omap_dss_device *dssdev)
 	else
 		props.max_brightness = 127;
 
-		bldev = backlight_device_register(dssdev->name,
-			&dssdev->dev, dssdev, &taal_bl_ops, &props);
-
+	props.type = BACKLIGHT_RAW;
+	bldev = backlight_device_register(dev_name(&dssdev->dev), &dssdev->dev,
+					dssdev, &taal_bl_ops, &props);
 	if (IS_ERR(bldev)) {
 		r = PTR_ERR(bldev);
 		goto err_bl;
@@ -832,15 +1066,10 @@ static int taal_probe(struct omap_dss_device *dssdev)
 
 		gpio_direction_input(gpio);
 
-		if (dssdev->channel == OMAP_DSS_CHANNEL_LCD) {
-			r = request_irq(gpio_to_irq(gpio), taal_te_isr,
+		r = request_irq(gpio_to_irq(gpio), taal_te_isr,
 				IRQF_DISABLED | IRQF_TRIGGER_RISING,
 				"taal vsync", dssdev);
-		} else {
-			r = request_irq(gpio_to_irq(gpio), taal_te_isr2,
-				IRQF_DISABLED | IRQF_TRIGGER_RISING,
-				"taal vsync2", dssdev);
-		}
+
 		if (r) {
 			dev_err(&dssdev->dev, "IRQ request failed\n");
 			gpio_free(gpio);
@@ -848,19 +1077,34 @@ static int taal_probe(struct omap_dss_device *dssdev)
 		}
 
 		INIT_DELAYED_WORK_DEFERRABLE(&td->te_timeout_work,
-				taal_te_timeout_work_callback);
+					taal_te_timeout_work_callback);
 
 		dev_dbg(&dssdev->dev, "Using GPIO TE\n");
+	}
+
+	r = omap_dsi_request_vc(dssdev, &td->channel);
+	if (r) {
+		dev_err(&dssdev->dev, "failed to get virtual channel\n");
+		goto err_req_vc;
+	}
+
+	r = omap_dsi_set_vc_id(dssdev, td->channel, TCH);
+	if (r) {
+		dev_err(&dssdev->dev, "failed to set VC_ID\n");
+		goto err_vc_id;
 	}
 
 	r = sysfs_create_group(&dssdev->dev.kobj, &taal_attr_group);
 	if (r) {
 		dev_err(&dssdev->dev, "failed to create sysfs files\n");
-		goto err_sysfs;
+		goto err_vc_id;
 	}
 
 	return 0;
-err_sysfs:
+
+err_vc_id:
+	omap_dsi_release_vc(dssdev, td->channel);
+err_req_vc:
 	if (panel_data->use_ext_te)
 		free_irq(gpio_to_irq(panel_data->ext_te_gpio), dssdev);
 err_irq:
@@ -869,7 +1113,7 @@ err_irq:
 err_gpio:
 	backlight_device_unregister(bldev);
 err_bl:
-	destroy_workqueue(td->esd_wq);
+	destroy_workqueue(td->workqueue);
 err_wq:
 	free_regulators(panel_config->regulators, panel_config->num_regulators);
 err_reg:
@@ -878,7 +1122,7 @@ err:
 	return r;
 }
 
-static void taal_remove(struct omap_dss_device *dssdev)
+static void __exit taal_remove(struct omap_dss_device *dssdev)
 {
 	struct taal_data *td = dev_get_drvdata(&dssdev->dev);
 	struct nokia_dsi_panel_data *panel_data = get_panel_data(dssdev);
@@ -887,6 +1131,7 @@ static void taal_remove(struct omap_dss_device *dssdev)
 	dev_dbg(&dssdev->dev, "remove\n");
 
 	sysfs_remove_group(&dssdev->dev.kobj, &taal_attr_group);
+	omap_dsi_release_vc(dssdev, td->channel);
 
 	if (panel_data->use_ext_te) {
 		int gpio = panel_data->ext_te_gpio;
@@ -899,8 +1144,9 @@ static void taal_remove(struct omap_dss_device *dssdev)
 	taal_bl_update_status(bldev);
 	backlight_device_unregister(bldev);
 
-	cancel_delayed_work(&td->esd_work);
-	destroy_workqueue(td->esd_wq);
+	taal_cancel_ulps_work(dssdev);
+	taal_cancel_esd_work(dssdev);
+	destroy_workqueue(td->workqueue);
 
 	/* reset, to be sure that the panel is in a valid state */
 	taal_hw_reset(dssdev);
@@ -916,9 +1162,9 @@ static int taal_power_on(struct omap_dss_device *dssdev)
 	struct taal_data *td = dev_get_drvdata(&dssdev->dev);
 	u8 id1, id2, id3;
 	int r;
-	enum omap_dsi_index ix;
 
-	ix = (dssdev->channel == OMAP_DSS_CHANNEL_LCD) ? DSI1 : DSI2;
+	/* At power on the first vsync has not been received yet */
+        dssdev->first_vsync = false;
 
 	r = omapdss_dsi_display_enable(dssdev);
 	if (r) {
@@ -928,13 +1174,13 @@ static int taal_power_on(struct omap_dss_device *dssdev)
 
 	taal_hw_reset(dssdev);
 
-	omapdss_dsi_vc_enable_hs(ix, TCH, false);
+	omapdss_dsi_vc_enable_hs(dssdev, td->channel, false);
 
-	r = taal_sleep_out(ix, td);
+	r = taal_sleep_out(td);
 	if (r)
 		goto err;
 
-	r = taal_get_id(ix, &id1, &id2, &id3);
+	r = taal_get_id(td, &id1, &id2, &id3);
 	if (r)
 		goto err;
 
@@ -943,30 +1189,30 @@ static int taal_power_on(struct omap_dss_device *dssdev)
 		(id2 == 0x00 || id2 == 0xff || id2 == 0x81))
 		td->cabc_broken = true;
 
-	r = taal_dcs_write_1(ix, DCS_BRIGHTNESS, 0xff);
+	r = taal_dcs_write_1(td, DCS_BRIGHTNESS, 0xff);
 	if (r)
 		goto err;
 
-	r = taal_dcs_write_1(ix, DCS_CTRL_DISPLAY,
+	r = taal_dcs_write_1(td, DCS_CTRL_DISPLAY,
 			(1<<2) | (1<<5));	/* BL | BCTRL */
 	if (r)
 		goto err;
 
-	r = taal_dcs_write_1(ix, DCS_PIXEL_FORMAT, 0x7); /* 24bit/pixel */
+	r = taal_dcs_write_1(td, DCS_PIXEL_FORMAT, 0x7); /* 24bit/pixel */
 	if (r)
 		goto err;
 
-	r = taal_set_addr_mode(ix, td->rotate, td->mirror);
+	r = taal_set_addr_mode(td, td->rotate, td->mirror);
 	if (r)
 		goto err;
 
 	if (!td->cabc_broken) {
-		r = taal_dcs_write_1(ix, DCS_WRITE_CABC, td->cabc_mode);
+		r = taal_dcs_write_1(td, DCS_WRITE_CABC, td->cabc_mode);
 		if (r)
 			goto err;
 	}
 
-	r = taal_dcs_write_0(ix, DCS_DISPLAY_ON);
+	r = taal_dcs_write_0(td, DCS_DISPLAY_ON);
 	if (r)
 		goto err;
 
@@ -985,7 +1231,7 @@ static int taal_power_on(struct omap_dss_device *dssdev)
 		td->intro_printed = true;
 	}
 
-	omapdss_dsi_vc_enable_hs(ix, TCH, true);
+	omapdss_dsi_vc_enable_hs(dssdev, td->channel, true);
 
 	return 0;
 err:
@@ -993,7 +1239,7 @@ err:
 
 	taal_hw_reset(dssdev);
 
-	omapdss_dsi_display_disable(dssdev);
+	omapdss_dsi_display_disable(dssdev, true, false);
 err0:
 	return r;
 }
@@ -1002,13 +1248,10 @@ static void taal_power_off(struct omap_dss_device *dssdev)
 {
 	struct taal_data *td = dev_get_drvdata(&dssdev->dev);
 	int r;
-        enum omap_dsi_index ix;
 
-        ix = (dssdev->channel == OMAP_DSS_CHANNEL_LCD) ? DSI1 : DSI2;
-
-	r = taal_dcs_write_0(ix, DCS_DISPLAY_OFF);
+	r = taal_dcs_write_0(td, DCS_DISPLAY_OFF);
 	if (!r) {
-		r = taal_sleep_in(ix, td);
+		r = taal_sleep_in(td);
 		/* HACK: wait a bit so that the message goes through */
 		msleep(10);
 	}
@@ -1019,98 +1262,24 @@ static void taal_power_off(struct omap_dss_device *dssdev)
 		taal_hw_reset(dssdev);
 	}
 
-	omapdss_dsi_display_disable(dssdev);
+	omapdss_dsi_display_disable(dssdev, true, false);
 
 	td->enabled = 0;
 }
 
-static int taal_start(struct omap_dss_device *dssdev)
+static int taal_panel_reset(struct omap_dss_device *dssdev)
 {
-	struct taal_data *td = dev_get_drvdata(&dssdev->dev);
-	struct nokia_dsi_panel_data *panel_data = get_panel_data(dssdev);
-	int r = 0;
-	enum omap_dsi_index ix;
-
-	ix = (dssdev->channel == OMAP_DSS_CHANNEL_LCD) ? DSI1 : DSI2;
-
-	dsi_bus_lock(ix);
-
-	r = taal_power_on(dssdev);
-
-	dsi_bus_unlock(ix);
-
-	if (r) {
-		dev_dbg(&dssdev->dev, "enable failed\n");
-		dssdev->state = OMAP_DSS_DISPLAY_DISABLED;
-	} else {
-		dssdev->state = OMAP_DSS_DISPLAY_ACTIVE;
-		if (panel_data->use_esd_check)
-			queue_delayed_work(td->esd_wq, &td->esd_work,
-					TAAL_ESD_CHECK_PERIOD);
-	}
-
-	return r;
-}
-
-static void taal_stop(struct omap_dss_device *dssdev)
-{
-	struct taal_data *td = dev_get_drvdata(&dssdev->dev);
-	enum omap_dsi_index ix;
-
-	ix = (dssdev->channel == OMAP_DSS_CHANNEL_LCD) ? DSI1 : DSI2;
-
-	cancel_delayed_work(&td->esd_work);
-
-	dsi_bus_lock(ix);
+	dev_err(&dssdev->dev, "performing LCD reset\n");
 
 	taal_power_off(dssdev);
-
-	dsi_bus_unlock(ix);
-}
-
-static void taal_disable(struct omap_dss_device *dssdev)
-{
-	struct taal_data *td = dev_get_drvdata(&dssdev->dev);
-
-	dev_dbg(&dssdev->dev, "disable\n");
-
-	mutex_lock(&td->lock);
-
-	if (dssdev->state == OMAP_DSS_DISPLAY_ACTIVE ||
-	    dssdev->state == OMAP_DSS_DISPLAY_TRANSITION)
-		taal_stop(dssdev);
-
-	dssdev->state = OMAP_DSS_DISPLAY_DISABLED;
-
-	mutex_unlock(&td->lock);
-}
-
-static int taal_suspend(struct omap_dss_device *dssdev)
-{
-	struct taal_data *td = dev_get_drvdata(&dssdev->dev);
-	int r = 0;
-
-	dev_dbg(&dssdev->dev, "suspend\n");
-
-	mutex_lock(&td->lock);
-
-	if (dssdev->state != OMAP_DSS_DISPLAY_ACTIVE) {
-		r = -EINVAL;
-		goto err;
-	}
-
-	taal_stop(dssdev);
-
-	dssdev->state = OMAP_DSS_DISPLAY_SUSPENDED;
-err:
-	mutex_unlock(&td->lock);
-	return r;
+	taal_hw_reset(dssdev);
+	return taal_power_on(dssdev);
 }
 
 static int taal_enable(struct omap_dss_device *dssdev)
 {
 	struct taal_data *td = dev_get_drvdata(&dssdev->dev);
-	int r = 0;
+	int r;
 
 	dev_dbg(&dssdev->dev, "enable\n");
 
@@ -1121,7 +1290,86 @@ static int taal_enable(struct omap_dss_device *dssdev)
 		goto err;
 	}
 
-	r = taal_start(dssdev);
+	dsi_bus_lock(dssdev);
+
+	r = taal_power_on(dssdev);
+
+	dsi_bus_unlock(dssdev);
+
+	if (r)
+		goto err;
+
+	taal_queue_esd_work(dssdev);
+
+	dssdev->state = OMAP_DSS_DISPLAY_ACTIVE;
+
+	mutex_unlock(&td->lock);
+
+	return 0;
+err:
+	dev_dbg(&dssdev->dev, "enable failed\n");
+	mutex_unlock(&td->lock);
+	return r;
+}
+
+static void taal_disable(struct omap_dss_device *dssdev)
+{
+	struct taal_data *td = dev_get_drvdata(&dssdev->dev);
+
+	dev_dbg(&dssdev->dev, "disable\n");
+
+	mutex_lock(&td->lock);
+
+	taal_cancel_ulps_work(dssdev);
+	taal_cancel_esd_work(dssdev);
+
+	dsi_bus_lock(dssdev);
+
+	if (dssdev->state == OMAP_DSS_DISPLAY_ACTIVE) {
+		int r;
+
+		r = taal_wake_up(dssdev);
+		if (!r)
+			taal_power_off(dssdev);
+	}
+
+	dsi_bus_unlock(dssdev);
+
+	dssdev->state = OMAP_DSS_DISPLAY_DISABLED;
+
+	mutex_unlock(&td->lock);
+}
+
+static int taal_suspend(struct omap_dss_device *dssdev)
+{
+	struct taal_data *td = dev_get_drvdata(&dssdev->dev);
+	int r;
+
+	dev_dbg(&dssdev->dev, "suspend\n");
+
+	mutex_lock(&td->lock);
+
+	if (dssdev->state != OMAP_DSS_DISPLAY_ACTIVE) {
+		r = -EINVAL;
+		goto err;
+	}
+
+	taal_cancel_ulps_work(dssdev);
+	taal_cancel_esd_work(dssdev);
+
+	dsi_bus_lock(dssdev);
+
+	r = taal_wake_up(dssdev);
+	if (!r)
+		taal_power_off(dssdev);
+
+	dsi_bus_unlock(dssdev);
+
+	dssdev->state = OMAP_DSS_DISPLAY_SUSPENDED;
+
+	mutex_unlock(&td->lock);
+
+	return 0;
 err:
 	mutex_unlock(&td->lock);
 	return r;
@@ -1130,7 +1378,7 @@ err:
 static int taal_resume(struct omap_dss_device *dssdev)
 {
 	struct taal_data *td = dev_get_drvdata(&dssdev->dev);
-	int r = 0;
+	int r;
 
 	dev_dbg(&dssdev->dev, "resume\n");
 
@@ -1141,7 +1389,22 @@ static int taal_resume(struct omap_dss_device *dssdev)
 		goto err;
 	}
 
-	r = taal_start(dssdev);
+	dsi_bus_lock(dssdev);
+
+	r = taal_power_on(dssdev);
+
+	dsi_bus_unlock(dssdev);
+
+	if (r) {
+		dssdev->state = OMAP_DSS_DISPLAY_DISABLED;
+	} else {
+		dssdev->state = OMAP_DSS_DISPLAY_ACTIVE;
+		taal_queue_esd_work(dssdev);
+	}
+
+	mutex_unlock(&td->lock);
+
+	return r;
 err:
 	mutex_unlock(&td->lock);
 	return r;
@@ -1150,12 +1413,8 @@ err:
 static void taal_framedone_cb(int err, void *data)
 {
 	struct omap_dss_device *dssdev = data;
-        enum omap_dsi_index ix;
-
-        ix = (dssdev->channel == OMAP_DSS_CHANNEL_LCD) ? DSI1 : DSI2;
-
 	dev_dbg(&dssdev->dev, "framedone, err %d\n", err);
-	dsi_bus_unlock(ix);
+	dsi_bus_unlock(dssdev);
 }
 
 static irqreturn_t taal_te_isr(int irq, void *data)
@@ -1170,7 +1429,7 @@ static irqreturn_t taal_te_isr(int irq, void *data)
 	if (old) {
 		cancel_delayed_work(&td->te_timeout_work);
 
-		r = omap_dsi_update(dssdev, TCH,
+		r = omap_dsi_update(dssdev, td->channel,
 				td->update_region.x,
 				td->update_region.y,
 				td->update_region.w,
@@ -1183,37 +1442,8 @@ static irqreturn_t taal_te_isr(int irq, void *data)
 	return IRQ_HANDLED;
 err:
 	dev_err(&dssdev->dev, "start update failed\n");
-	dsi_bus_unlock(DSI1);
+	dsi_bus_unlock(dssdev);
 	return IRQ_HANDLED;
-}
-
-static irqreturn_t taal_te_isr2(int irq, void *data)
-{
-        struct omap_dss_device *dssdev = data;
-        struct taal_data *td = dev_get_drvdata(&dssdev->dev);
-        int old;
-        int r;
-
-        old = atomic_cmpxchg(&td->do_update, 1, 0);
-
-        if (old) {
-                cancel_delayed_work(&td->te_timeout_work);
-
-                r = omap_dsi_update(dssdev, TCH,
-                                td->update_region.x,
-                                td->update_region.y,
-                                td->update_region.w,
-                                td->update_region.h,
-                                taal_framedone_cb, dssdev);
-                if (r)
-                        goto err;
-        }
-
-        return IRQ_HANDLED;
-err:
-        dev_err(&dssdev->dev, "start update failed\n");
-        dsi_bus_unlock(DSI2);
-        return IRQ_HANDLED;
 }
 
 static void taal_te_timeout_work_callback(struct work_struct *work)
@@ -1221,25 +1451,28 @@ static void taal_te_timeout_work_callback(struct work_struct *work)
 	struct taal_data *td = container_of(work, struct taal_data,
 					te_timeout_work.work);
 	struct omap_dss_device *dssdev = td->dssdev;
-	enum omap_dsi_index ix;
-
-	ix = (dssdev->channel == OMAP_DSS_CHANNEL_LCD) ? DSI1 : DSI2;
 
 	dev_err(&dssdev->dev, "TE not received for 250ms!\n");
 
 	atomic_set(&td->do_update, 0);
-	dsi_bus_unlock(ix);
+	dsi_bus_unlock(dssdev);
 }
 
-static int taal_update_locked(struct omap_dss_device *dssdev,
+static int taal_update(struct omap_dss_device *dssdev,
 				    u16 x, u16 y, u16 w, u16 h)
 {
 	struct taal_data *td = dev_get_drvdata(&dssdev->dev);
 	struct nokia_dsi_panel_data *panel_data = get_panel_data(dssdev);
 	int r;
-	enum omap_dsi_index ix;
 
-	ix = (dssdev->channel == OMAP_DSS_CHANNEL_LCD) ? DSI1 : DSI2;
+	dev_dbg(&dssdev->dev, "update %d, %d, %d x %d\n", x, y, w, h);
+
+	mutex_lock(&td->lock);
+	dsi_bus_lock(dssdev);
+
+	r = taal_wake_up(dssdev);
+	if (r)
+		goto err;
 
 	if (!td->enabled) {
 		r = 0;
@@ -1248,10 +1481,9 @@ static int taal_update_locked(struct omap_dss_device *dssdev,
 
 	r = omap_dsi_prepare_update(dssdev, &x, &y, &w, &h, true);
 	if (r)
-
 		goto err;
 
-	r = taal_set_update_window(ix, x, y, w, h);
+	r = taal_set_update_window(td, x, y, w, h);
 	if (r)
 		goto err;
 
@@ -1265,12 +1497,7 @@ static int taal_update_locked(struct omap_dss_device *dssdev,
 				msecs_to_jiffies(250));
 		atomic_set(&td->do_update, 1);
 	} else {
-		/* We use VC(1) for VideoPort Data and VC(0) for L4 data */
-		if (cpu_is_omap44xx())
-			r = omap_dsi_update(dssdev, 1, x, y, w, h,
-				taal_framedone_cb, dssdev);
-		else
-			r = omap_dsi_update(dssdev, TCH, x, y, w, h,
+		r = omap_dsi_update(dssdev, td->channel, x, y, w, h,
 				taal_framedone_cb, dssdev);
 		if (r)
 			goto err;
@@ -1280,74 +1507,20 @@ static int taal_update_locked(struct omap_dss_device *dssdev,
 	mutex_unlock(&td->lock);
 	return 0;
 err:
-	dsi_bus_unlock(ix);
+	dsi_bus_unlock(dssdev);
 	mutex_unlock(&td->lock);
-	return r;
-}
-
-static int taal_update(struct omap_dss_device *dssdev,
-				    u16 x, u16 y, u16 w, u16 h)
-{
-	enum omap_dsi_index ix;
-	struct taal_data *td = dev_get_drvdata(&dssdev->dev);
-
-	dev_dbg(&dssdev->dev, "update %d, %d, %d x %d\n", x, y, w, h);
-	ix = (dssdev->channel == OMAP_DSS_CHANNEL_LCD) ? DSI1 : DSI2;
-
-	mutex_lock(&td->lock);
-
-	/* mark while waiting on bus so delayed update will not call update */
-	dssdev->sched_update.waiting = true;
-	dsi_bus_lock(ix);
-	dssdev->sched_update.waiting = false;
-
-	return taal_update_locked(dssdev, x, y, w, h);
-}
-
-static int taal_sched_update(struct omap_dss_device *dssdev,
-					u16 x, u16 y, u16 w, u16 h)
-{
-	struct taal_data *td = dev_get_drvdata(&dssdev->dev);
-	int r;
-
-	if (mutex_trylock(&td->lock)) {
-		r = omap_dsi_sched_update_lock(dssdev, x, y, w, h, false);
-
-		if (!r) {
-			/* start the update now */
-			r = taal_update_locked(dssdev, x, y, w, h);
-
-			return r;
-		}
-
-		if (r == -EBUSY)
-			r = 0;
-
-		mutex_unlock(&td->lock);
-
-	} else {
-		/* this locks dsi bus if it can and returns 0 */
-		r = omap_dsi_sched_update_lock(dssdev, x, y, w, h, true);
-
-		if (r == -EBUSY)
-			r = 0;
-	}
-
 	return r;
 }
 
 static int taal_sync(struct omap_dss_device *dssdev)
 {
 	struct taal_data *td = dev_get_drvdata(&dssdev->dev);
-	enum omap_dsi_index ix;
-
-	ix = (dssdev->channel == OMAP_DSS_CHANNEL_LCD) ? DSI1 : DSI2;
 
 	dev_dbg(&dssdev->dev, "sync\n");
 
 	mutex_lock(&td->lock);
-	dsi_bus_lock(ix);
-	dsi_bus_unlock(ix);
+	dsi_bus_lock(dssdev);
+	dsi_bus_unlock(dssdev);
 	mutex_unlock(&td->lock);
 
 	dev_dbg(&dssdev->dev, "sync done\n");
@@ -1360,14 +1533,11 @@ static int _taal_enable_te(struct omap_dss_device *dssdev, bool enable)
 	struct taal_data *td = dev_get_drvdata(&dssdev->dev);
 	struct nokia_dsi_panel_data *panel_data = get_panel_data(dssdev);
 	int r;
-	enum omap_dsi_index ix;
-
-	ix = (dssdev->channel == OMAP_DSS_CHANNEL_LCD) ? DSI1 : DSI2;
 
 	if (enable)
-		r = taal_dcs_write_1(ix, DCS_TEAR_ON, 0);
+		r = taal_dcs_write_1(td, DCS_TEAR_ON, 0);
 	else
-		r = taal_dcs_write_0(ix, DCS_TEAR_OFF);
+		r = taal_dcs_write_0(td, DCS_TEAR_OFF);
 
 	if (!panel_data->use_ext_te)
 		omapdss_dsi_enable_te(dssdev, enable);
@@ -1382,18 +1552,19 @@ static int taal_enable_te(struct omap_dss_device *dssdev, bool enable)
 {
 	struct taal_data *td = dev_get_drvdata(&dssdev->dev);
 	int r;
-	enum omap_dsi_index ix;
-
-	ix = (dssdev->channel == OMAP_DSS_CHANNEL_LCD) ? DSI1 : DSI2;
 
 	mutex_lock(&td->lock);
 
 	if (td->te_enabled == enable)
 		goto end;
 
-	dsi_bus_lock(ix);
+	dsi_bus_lock(dssdev);
 
 	if (td->enabled) {
+		r = taal_wake_up(dssdev);
+		if (r)
+			goto err;
+
 		r = _taal_enable_te(dssdev, enable);
 		if (r)
 			goto err;
@@ -1401,13 +1572,13 @@ static int taal_enable_te(struct omap_dss_device *dssdev, bool enable)
 
 	td->te_enabled = enable;
 
-	dsi_bus_unlock(ix);
+	dsi_bus_unlock(dssdev);
 end:
 	mutex_unlock(&td->lock);
 
 	return 0;
 err:
-	dsi_bus_unlock(ix);
+	dsi_bus_unlock(dssdev);
 	mutex_unlock(&td->lock);
 
 	return r;
@@ -1429,9 +1600,6 @@ static int taal_rotate(struct omap_dss_device *dssdev, u8 rotate)
 {
 	struct taal_data *td = dev_get_drvdata(&dssdev->dev);
 	int r;
-	enum omap_dsi_index ix;
-
-	ix = (dssdev->channel == OMAP_DSS_CHANNEL_LCD) ? DSI1 : DSI2;
 
 	dev_dbg(&dssdev->dev, "rotate %d\n", rotate);
 
@@ -1440,22 +1608,26 @@ static int taal_rotate(struct omap_dss_device *dssdev, u8 rotate)
 	if (td->rotate == rotate)
 		goto end;
 
-	dsi_bus_lock(ix);
+	dsi_bus_lock(dssdev);
 
 	if (td->enabled) {
-		r = taal_set_addr_mode(ix, rotate, td->mirror);
+		r = taal_wake_up(dssdev);
+		if (r)
+			goto err;
+
+		r = taal_set_addr_mode(td, rotate, td->mirror);
 		if (r)
 			goto err;
 	}
 
 	td->rotate = rotate;
 
-	dsi_bus_unlock(ix);
+	dsi_bus_unlock(dssdev);
 end:
 	mutex_unlock(&td->lock);
 	return 0;
 err:
-	dsi_bus_unlock(ix);
+	dsi_bus_unlock(dssdev);
 	mutex_unlock(&td->lock);
 	return r;
 }
@@ -1476,9 +1648,6 @@ static int taal_mirror(struct omap_dss_device *dssdev, bool enable)
 {
 	struct taal_data *td = dev_get_drvdata(&dssdev->dev);
 	int r;
-	enum omap_dsi_index ix;
-
-	ix = (dssdev->channel == OMAP_DSS_CHANNEL_LCD) ? DSI1 : DSI2;
 
 	dev_dbg(&dssdev->dev, "mirror %d\n", enable);
 
@@ -1487,21 +1656,25 @@ static int taal_mirror(struct omap_dss_device *dssdev, bool enable)
 	if (td->mirror == enable)
 		goto end;
 
-	dsi_bus_lock(ix);
+	dsi_bus_lock(dssdev);
 	if (td->enabled) {
-		r = taal_set_addr_mode(ix, td->rotate, enable);
+		r = taal_wake_up(dssdev);
+		if (r)
+			goto err;
+
+		r = taal_set_addr_mode(td, td->rotate, enable);
 		if (r)
 			goto err;
 	}
 
 	td->mirror = enable;
 
-	dsi_bus_unlock(ix);
+	dsi_bus_unlock(dssdev);
 end:
 	mutex_unlock(&td->lock);
 	return 0;
 err:
-	dsi_bus_unlock(ix);
+	dsi_bus_unlock(dssdev);
 	mutex_unlock(&td->lock);
 	return r;
 }
@@ -1523,9 +1696,6 @@ static int taal_run_test(struct omap_dss_device *dssdev, int test_num)
 	struct taal_data *td = dev_get_drvdata(&dssdev->dev);
 	u8 id1, id2, id3;
 	int r;
-	enum omap_dsi_index ix;
-
-	ix = (dssdev->channel == OMAP_DSS_CHANNEL_LCD) ? DSI1 : DSI2;
 
 	mutex_lock(&td->lock);
 
@@ -1534,23 +1704,27 @@ static int taal_run_test(struct omap_dss_device *dssdev, int test_num)
 		goto err1;
 	}
 
-	dsi_bus_lock(ix);
+	dsi_bus_lock(dssdev);
 
-	r = taal_dcs_read_1(ix, DCS_GET_ID1, &id1);
-	if (r)
-		goto err2;
-	r = taal_dcs_read_1(ix, DCS_GET_ID2, &id2);
-	if (r)
-		goto err2;
-	r = taal_dcs_read_1(ix, DCS_GET_ID3, &id3);
+	r = taal_wake_up(dssdev);
 	if (r)
 		goto err2;
 
-	dsi_bus_unlock(ix);
+	r = taal_dcs_read_1(td, DCS_GET_ID1, &id1);
+	if (r)
+		goto err2;
+	r = taal_dcs_read_1(td, DCS_GET_ID2, &id2);
+	if (r)
+		goto err2;
+	r = taal_dcs_read_1(td, DCS_GET_ID3, &id3);
+	if (r)
+		goto err2;
+
+	dsi_bus_unlock(dssdev);
 	mutex_unlock(&td->lock);
 	return 0;
 err2:
-	dsi_bus_unlock(ix);
+	dsi_bus_unlock(dssdev);
 err1:
 	mutex_unlock(&td->lock);
 	return r;
@@ -1565,9 +1739,6 @@ static int taal_memory_read(struct omap_dss_device *dssdev,
 	int plen;
 	unsigned buf_used = 0;
 	struct taal_data *td = dev_get_drvdata(&dssdev->dev);
-	enum omap_dsi_index ix;
-
-	ix = (dssdev->channel == OMAP_DSS_CHANNEL_LCD) ? DSI1 : DSI2;
 
 	if (size < w * h * 3)
 		return -ENOMEM;
@@ -1583,7 +1754,11 @@ static int taal_memory_read(struct omap_dss_device *dssdev,
 			dssdev->panel.timings.x_res *
 			dssdev->panel.timings.y_res * 3);
 
-	dsi_bus_lock(ix);
+	dsi_bus_lock(dssdev);
+
+	r = taal_wake_up(dssdev);
+	if (r)
+		goto err2;
 
 	/* plen 1 or 2 goes into short packet. until checksum error is fixed,
 	 * use short packets. plen 32 works, but bigger packets seem to cause
@@ -1593,9 +1768,9 @@ static int taal_memory_read(struct omap_dss_device *dssdev,
 	else
 		plen = 2;
 
-	taal_set_update_window(ix, x, y, w, h);
+	taal_set_update_window(td, x, y, w, h);
 
-	r = dsi_vc_set_max_rx_packet_size(ix, TCH, plen);
+	r = dsi_vc_set_max_rx_packet_size(dssdev, td->channel, plen);
 	if (r)
 		goto err2;
 
@@ -1603,7 +1778,7 @@ static int taal_memory_read(struct omap_dss_device *dssdev,
 		u8 dcs_cmd = first ? 0x2e : 0x3e;
 		first = 0;
 
-		r = dsi_vc_dcs_read(ix, TCH, dcs_cmd,
+		r = dsi_vc_dcs_read(dssdev, td->channel, dcs_cmd,
 				buf + buf_used, size - buf_used);
 
 		if (r < 0) {
@@ -1629,12 +1804,33 @@ static int taal_memory_read(struct omap_dss_device *dssdev,
 	r = buf_used;
 
 err3:
-	dsi_vc_set_max_rx_packet_size(ix, TCH, 1);
+	dsi_vc_set_max_rx_packet_size(dssdev, td->channel, 1);
 err2:
-	dsi_bus_unlock(ix);
+	dsi_bus_unlock(dssdev);
 err1:
 	mutex_unlock(&td->lock);
 	return r;
+}
+
+static void taal_ulps_work(struct work_struct *work)
+{
+	struct taal_data *td = container_of(work, struct taal_data,
+			ulps_work.work);
+	struct omap_dss_device *dssdev = td->dssdev;
+
+	mutex_lock(&td->lock);
+
+	if (dssdev->state != OMAP_DSS_DISPLAY_ACTIVE || !td->enabled) {
+		mutex_unlock(&td->lock);
+		return;
+	}
+
+	dsi_bus_lock(dssdev);
+
+	taal_enter_ulps(dssdev);
+
+	dsi_bus_unlock(dssdev);
+	mutex_unlock(&td->lock);
 }
 
 static void taal_esd_work(struct work_struct *work)
@@ -1645,8 +1841,6 @@ static void taal_esd_work(struct work_struct *work)
 	struct nokia_dsi_panel_data *panel_data = get_panel_data(dssdev);
 	u8 state1, state2;
 	int r;
-	enum omap_dsi_index ix;
-	ix = (dssdev->channel == OMAP_DSS_CHANNEL_LCD) ? DSI1 : DSI2;
 
 	mutex_lock(&td->lock);
 
@@ -1655,22 +1849,28 @@ static void taal_esd_work(struct work_struct *work)
 		return;
 	}
 
-	dsi_bus_lock(ix);
+	dsi_bus_lock(dssdev);
 
-	r = taal_dcs_read_1(ix, DCS_RDDSDR, &state1);
+	r = taal_wake_up(dssdev);
+	if (r) {
+		dev_err(&dssdev->dev, "failed to exit ULPS\n");
+		goto err;
+	}
+
+	r = taal_dcs_read_1(td, DCS_RDDSDR, &state1);
 	if (r) {
 		dev_err(&dssdev->dev, "failed to read Taal status\n");
 		goto err;
 	}
 
 	/* Run self diagnostics */
-	r = taal_sleep_out(ix, td);
+	r = taal_sleep_out(td);
 	if (r) {
 		dev_err(&dssdev->dev, "failed to run Taal self-diagnostics\n");
 		goto err;
 	}
 
-	r = taal_dcs_read_1(ix, DCS_RDDSDR, &state2);
+	r = taal_dcs_read_1(td, DCS_RDDSDR, &state2);
 	if (r) {
 		dev_err(&dssdev->dev, "failed to read Taal status\n");
 		goto err;
@@ -1686,27 +1886,25 @@ static void taal_esd_work(struct work_struct *work)
 	/* Self-diagnostics result is also shown on TE GPIO line. We need
 	 * to re-enable TE after self diagnostics */
 	if (td->te_enabled && panel_data->use_ext_te) {
-		r = taal_dcs_write_1(ix, DCS_TEAR_ON, 0);
+		r = taal_dcs_write_1(td, DCS_TEAR_ON, 0);
 		if (r)
 			goto err;
 	}
 
-	dsi_bus_unlock(ix);
+	dsi_bus_unlock(dssdev);
 
-	queue_delayed_work(td->esd_wq, &td->esd_work, TAAL_ESD_CHECK_PERIOD);
+	taal_queue_esd_work(dssdev);
 
 	mutex_unlock(&td->lock);
 	return;
 err:
 	dev_err(&dssdev->dev, "performing LCD reset\n");
 
-	taal_power_off(dssdev);
-	taal_hw_reset(dssdev);
-	taal_power_on(dssdev);
+	taal_panel_reset(dssdev);
 
-	dsi_bus_unlock(ix);
+	dsi_bus_unlock(dssdev);
 
-	queue_delayed_work(td->esd_wq, &td->esd_work, TAAL_ESD_CHECK_PERIOD);
+	taal_queue_esd_work(dssdev);
 
 	mutex_unlock(&td->lock);
 }
@@ -1715,7 +1913,7 @@ static int taal_set_update_mode(struct omap_dss_device *dssdev,
 		enum omap_dss_update_mode mode)
 {
 	if (mode != OMAP_DSS_UPDATE_MANUAL)
-			return -EINVAL;
+		return -EINVAL;
 	return 0;
 }
 
@@ -1727,7 +1925,7 @@ static enum omap_dss_update_mode taal_get_update_mode(
 
 static struct omap_dss_driver taal_driver = {
 	.probe		= taal_probe,
-	.remove		= taal_remove,
+	.remove		= __exit_p(taal_remove),
 
 	.enable		= taal_enable,
 	.disable	= taal_disable,
@@ -1738,11 +1936,9 @@ static struct omap_dss_driver taal_driver = {
 	.get_update_mode = taal_get_update_mode,
 
 	.update		= taal_update,
-	.sched_update	= taal_sched_update,
 	.sync		= taal_sync,
 
 	.get_resolution	= taal_get_resolution,
-	.get_dimension = taal_get_dimension,
 	.get_recommended_bpp = omapdss_default_get_recommended_bpp,
 
 	.enable_te	= taal_enable_te,
@@ -1756,8 +1952,6 @@ static struct omap_dss_driver taal_driver = {
 	.memory_read	= taal_memory_read,
 
 	.get_timings	= taal_get_timings,
-	.set_timings	= taal_set_timings,
-	.check_timings	= taal_check_timings,
 
 	.driver         = {
 		.name   = "taal",
@@ -1765,52 +1959,9 @@ static struct omap_dss_driver taal_driver = {
 	},
 };
 
-static struct omap_dss_driver taal2_driver = {
-	.probe		= taal_probe,
-	.remove		= taal_remove,
-
-	.enable		= taal_enable,
-	.disable	= taal_disable,
-	.suspend	= taal_suspend,
-	.resume		= taal_resume,
-
-	.set_update_mode = taal_set_update_mode,
-	.get_update_mode = taal_get_update_mode,
-
-	.update		= taal_update,
-	.sched_update	= taal_sched_update,
-	.sync		= taal_sync,
-
-	.get_resolution	= taal_get_resolution,
-	.get_dimension = taal_get_dimension,
-	.get_recommended_bpp = omapdss_default_get_recommended_bpp,
-
-	.enable_te	= taal_enable_te,
-	.get_te		= taal_get_te,
-
-	.set_rotate	= taal_rotate,
-	.get_rotate	= taal_get_rotate,
-	.set_mirror	= taal_mirror,
-	.get_mirror	= taal_get_mirror,
-	.run_test	= taal_run_test,
-	.memory_read	= taal_memory_read,
-
-	.get_timings	= taal_get_timings,
-	.set_timings	= taal_set_timings,
-	.check_timings	= taal_check_timings,
-
-	.driver         = {
-		.name   = "taal2",
-		.owner  = THIS_MODULE,
-	},
-};
-
-
 static int __init taal_init(void)
 {
 	omap_dss_register_driver(&taal_driver);
-	if (cpu_is_omap44xx())
-		omap_dss_register_driver(&taal2_driver);
 
 	return 0;
 }
@@ -1818,8 +1969,6 @@ static int __init taal_init(void)
 static void __exit taal_exit(void)
 {
 	omap_dss_unregister_driver(&taal_driver);
-	if (cpu_is_omap44xx())
-		omap_dss_unregister_driver(&taal2_driver);
 }
 
 module_init(taal_init);

@@ -1,11 +1,11 @@
-config TF_MSHIELD
+config TF_ZEBRA
 	bool
 
 config SECURITY_MIDDLEWARE_COMPONENT
 	bool "Enable SMC Driver"
 	depends on ARCH_OMAP3 || ARCH_OMAP4
 	default n
-	select TF_MSHIELD
+	select TF_ZEBRA
 	help
 	  This option adds kernel support for communication with the SMC
 	  Protected Application.

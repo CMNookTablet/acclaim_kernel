@@ -33,6 +33,7 @@
 #include <plat/clockdomain.h>
 #include <plat/voltage.h>
 #include <plat/dmtimer.h>
+#include <plat/prcm.h>
 
 #include <mach/omap4-common.h>
 
