@@ -521,6 +521,47 @@ static void __init show_acclaim_board_revision(int revision)
 	}
 }
 
+#ifdef CONFIG_BT_WILINK
+#include <linux/skbuff.h>
+#include <linux/ti_wilink_st.h>
+#endif
+
+#ifdef CONFIG_TI_ST
+/* wl128x BT, FM, GPS connectivity chip */
+int plat_kim_suspend(struct platform_device *pdev, pm_message_t state)
+{
+	return 0;
+}
+
+int plat_kim_resume(struct platform_device *pdev)
+{
+	return 0;
+}
+
+
+struct ti_st_plat_data wilink_pdata = {
+	.nshutdown_gpio = 46,
+	.dev_name = "/dev/ttyO1",
+	.flow_cntrl = 1,
+	.baud_rate = 3686400,
+	.suspend = plat_kim_suspend,
+	.resume = plat_kim_resume,
+};
+
+static struct platform_device wl128x_device = {
+	.name           = "kim",
+	.id             = -1,
+	.dev.platform_data = &wilink_pdata,
+};
+#endif
+
+#ifdef CONFIG_BT_WILINK
+static struct platform_device btwilink_device = {
+	.name = "btwilink",
+	.id = -1,
+};
+#endif
+
 #ifdef CONFIG_TI_ST
 static bool is_bt_active(void)
 {
@@ -1434,6 +1475,18 @@ void __init acclaim_peripherals_init(void)
 #ifdef CONFIG_BATTERY_MAX17042
 	max17042_dev_init();
 #endif
+
+
+#ifdef CONFIG_TI_ST
+        printk("acclaim: registering wl127x device.\n");
+        platform_device_register(&wl128x_device);
+#endif
+
+#ifdef CONFIG_BT_WILINK
+        printk("acclaim: registering btwilink device.\n");
+        platform_device_register(&btwilink_device);
+#endif
+
 
 	usb_uhhtll_init(&usbhs_pdata);
 	usb_musb_init(&musb_board_data);
