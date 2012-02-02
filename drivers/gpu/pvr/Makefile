@@ -29,7 +29,9 @@ ccflags-y = -DLINUX -D__linux__ -Idrivers/gpu/pvr \
 	-DSGX_EARLYSUSPEND \
 	-DPVR_NO_OMAP_TIMER \
 	-DSUPPORT_SGX_LOW_LATENCY_SCHEDULING \
-	-DPVRSRV_MODNAME="\"pvrsrvkm"\"
+	-DPVRSRV_MODNAME="\"pvrsrvkm"\" \
+	-DPVR_LDM_DRIVER_REGISTRATION_NAME="\"pvrsrvkm\"" \
+	-DSUPPORT_PVRSRV_GET_DC_SYSTEM_BUFFER
 
 ccflags-$(CONFIG_SGX540) +=  -Idrivers/gpu/pvr/omap4  -Idrivers/gpu/pvr/sgx \
 	-DSGX_CLK_CORE_DIV5 \
@@ -143,8 +145,9 @@ sgx_displayclass-y := \
 
 omaplfb-y := \
 	omaplfb/omaplfb_displayclass.o \
-	omaplfb/omaplfb-sysfs.o \
-	omaplfb/omaplfb_linux.o
+        omaplfb/omaplfb_linux.o
+
+#	omaplfb/omaplfb-sysfs.o \
 
 dbgdrv-$(CONFIG_SGX_PDUMP) := \
 	pdump/main.o \

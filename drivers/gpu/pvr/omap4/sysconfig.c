@@ -40,17 +40,16 @@ SYS_DATA  gsSysData;
 static SYS_SPECIFIC_DATA gsSysSpecificData;
 SYS_SPECIFIC_DATA *gpsSysSpecificData;
 
-static IMG_UINT32	gui32SGXDeviceID;
-static SGX_DEVICE_MAP	gsSGXDeviceMap;
-static PVRSRV_DEVICE_NODE *gpsSGXDevNode;
+static IMG_UINT32			gui32SGXDeviceID;
+static SGX_DEVICE_MAP		gsSGXDeviceMap;
+static PVRSRV_DEVICE_NODE	*gpsSGXDevNode;
 
-#define DEVICE_SGX_INTERRUPT (1 << 0)
 
 #if defined(NO_HARDWARE) || defined(SGX_OCP_REGS_ENABLED)
 static IMG_CPU_VIRTADDR gsSGXRegsCPUVAddr;
 #endif
 
-#if defined(LDM_PLATFORM) && !defined(PVR_DRI_DRM_NOT_PCI)
+#if defined(PVR_LINUX_DYNAMIC_SGX_RESOURCE_INFO)
 extern struct platform_device *gpsPVRLDMDev;
 #endif
 
@@ -155,7 +154,7 @@ static PVRSRV_ERROR SysLocateDevices(SYS_DATA *psSysData)
 
 #else 
 #if defined(PVR_LINUX_DYNAMIC_SGX_RESOURCE_INFO)
-
+	
 	dev_res = platform_get_resource(gpsPVRLDMDev, IORESOURCE_MEM, 0);
 	if (dev_res == NULL)
 	{
@@ -169,7 +168,7 @@ static PVRSRV_ERROR SysLocateDevices(SYS_DATA *psSysData)
 		PVR_DPF((PVR_DBG_ERROR, "%s: platform_get_irq failed (%d)", __FUNCTION__, -dev_irq));
 		return PVRSRV_ERROR_INVALID_DEVICE;
 	}
-
+	
 	gsSGXDeviceMap.sRegsSysPBase.uiAddr = dev_res->start;
 	gsSGXDeviceMap.sRegsCpuPBase =
 		SysSysPAddrToCpuPAddr(gsSGXDeviceMap.sRegsSysPBase);
@@ -180,14 +179,14 @@ static PVRSRV_ERROR SysLocateDevices(SYS_DATA *psSysData)
 
 	gsSGXDeviceMap.ui32IRQ = dev_irq;
 	PVR_TRACE(("SGX IRQ: %d", gsSGXDeviceMap.ui32IRQ));
-#else
+#else	
 	gsSGXDeviceMap.sRegsSysPBase.uiAddr = SYS_OMAP4430_SGX_REGS_SYS_PHYS_BASE;
 	gsSGXDeviceMap.sRegsCpuPBase = SysSysPAddrToCpuPAddr(gsSGXDeviceMap.sRegsSysPBase);
 	gsSGXDeviceMap.ui32RegsSize = SYS_OMAP4430_SGX_REGS_SIZE;
 
 	gsSGXDeviceMap.ui32IRQ = SYS_OMAP4430_SGX_IRQ;
 
-#endif
+#endif	
 #if defined(SGX_OCP_REGS_ENABLED)
 	gsSGXRegsCPUVAddr = OSMapPhysToLin(gsSGXDeviceMap.sRegsCpuPBase,
 	gsSGXDeviceMap.ui32RegsSize,
@@ -200,7 +199,7 @@ static PVRSRV_ERROR SysLocateDevices(SYS_DATA *psSysData)
 		return PVRSRV_ERROR_BAD_MAPPING;
 	}
 
-
+	
 	gsSGXDeviceMap.pvRegsCpuVBase = gsSGXRegsCPUVAddr;
 	gpvOCPRegsLinAddr = gsSGXRegsCPUVAddr;
 #endif
@@ -365,6 +364,16 @@ PVRSRV_ERROR SysInitialise(IMG_VOID)
 	}
 	SYS_SPECIFIC_DATA_SET(&gsSysSpecificData, SYS_SPECIFIC_DATA_ENABLE_PM_RUNTIME);
 
+	eError = SysDvfsInitialize(gpsSysSpecificData);
+	if (eError != PVRSRV_OK)
+	{
+		PVR_DPF((PVR_DBG_ERROR,"SysInitialise: Failed to initialize DVFS"));
+		(IMG_VOID)SysDeinitialise(gpsSysData);
+		gpsSysData = IMG_NULL;
+		return eError;
+	}
+	SYS_SPECIFIC_DATA_SET(&gsSysSpecificData, SYS_SPECIFIC_DATA_DVFS_INIT);
+
 	
 
 
@@ -474,7 +483,8 @@ PVRSRV_ERROR SysInitialise(IMG_VOID)
 				  (IMG_VOID **)&gpsSysData->pvSOCTimerRegisterKM,
 				  &gpsSysData->hSOCTimerRegisterOSMemHandle);
 	}
-#endif
+#endif 
+
 
 	return PVRSRV_OK;
 }
@@ -488,7 +498,7 @@ PVRSRV_ERROR SysFinalise(IMG_VOID)
 	eError = EnableSGXClocksWrap(gpsSysData);
 	if (eError != PVRSRV_OK)
 	{
-		PVR_DPF((PVR_DBG_ERROR,"SysInitialise: Failed to Enable SGX clocks (%d)", eError));
+		PVR_DPF((PVR_DBG_ERROR,"SysFinalise: Failed to Enable SGX clocks (%d)", eError));
 		return eError;
 	}
 #endif	
@@ -511,7 +521,6 @@ PVRSRV_ERROR SysFinalise(IMG_VOID)
 	}
 	SYS_SPECIFIC_DATA_SET(&gsSysSpecificData, SYS_SPECIFIC_DATA_ENABLE_LISR);
 #endif 
-
 #if defined(__linux__)
 	
 	gpsSysData->pszVersionString = SysCreateVersionString();
@@ -540,6 +549,8 @@ PVRSRV_ERROR SysDeinitialise (SYS_DATA *psSysData)
 {
 	PVRSRV_ERROR eError;
 
+	PVR_UNREFERENCED_PARAMETER(psSysData);
+
 	if(gpsSysData->pvSOCTimerRegisterKM)
 	{
 		OSUnReservePhys(gpsSysData->pvSOCTimerRegisterKM,
@@ -548,10 +559,11 @@ PVRSRV_ERROR SysDeinitialise (SYS_DATA *psSysData)
 						gpsSysData->hSOCTimerRegisterOSMemHandle);
 	}
 
+
 #if defined(SYS_USING_INTERRUPTS)
 	if (SYS_SPECIFIC_DATA_TEST(gpsSysSpecificData, SYS_SPECIFIC_DATA_ENABLE_LISR))
 	{
-		eError = OSUninstallDeviceLISR(psSysData);
+		eError = OSUninstallDeviceLISR(gpsSysData);
 		if (eError != PVRSRV_OK)
 		{
 			PVR_DPF((PVR_DBG_ERROR,"SysDeinitialise: OSUninstallDeviceLISR failed"));
@@ -562,7 +574,7 @@ PVRSRV_ERROR SysDeinitialise (SYS_DATA *psSysData)
 
 	if (SYS_SPECIFIC_DATA_TEST(gpsSysSpecificData, SYS_SPECIFIC_DATA_ENABLE_MISR))
 	{
-		eError = OSUninstallMISR(psSysData);
+		eError = OSUninstallMISR(gpsSysData);
 		if (eError != PVRSRV_OK)
 		{
 			PVR_DPF((PVR_DBG_ERROR,"SysDeinitialise: OSUninstallMISR failed"));
@@ -588,6 +600,17 @@ PVRSRV_ERROR SysDeinitialise (SYS_DATA *psSysData)
 		if (eError != PVRSRV_OK)
 		{
 			PVR_DPF((PVR_DBG_ERROR,"SysDeinitialise: failed to de-init the device"));
+			return eError;
+		}
+	}
+
+	if (SYS_SPECIFIC_DATA_TEST(gpsSysSpecificData, SYS_SPECIFIC_DATA_DVFS_INIT))
+	{
+		eError = SysDvfsDeinitialize(gpsSysSpecificData);
+		if (eError != PVRSRV_OK)
+		{
+			PVR_DPF((PVR_DBG_ERROR,"SysDeinitialise: Failed to de-init DVFS"));
+			gpsSysData = IMG_NULL;
 			return eError;
 		}
 	}
@@ -637,11 +660,11 @@ PVRSRV_ERROR SysDeinitialise (SYS_DATA *psSysData)
 
 		gpvOCPRegsLinAddr = IMG_NULL;
 #endif
-#endif
+#endif	
 		gsSGXRegsCPUVAddr = IMG_NULL;
 		gsSGXDeviceMap.pvRegsCpuVBase = gsSGXRegsCPUVAddr;
 	}
-#endif
+#endif	
 
 	
 	gpsSysSpecificData->ui32SysSpecificData = 0;
@@ -744,7 +767,6 @@ IMG_VOID SysRemoveExternalDevice(PVRSRV_DEVICE_NODE *psDeviceNode)
 	PVR_UNREFERENCED_PARAMETER(psDeviceNode);
 }
 
-
 IMG_UINT32 SysGetInterruptSource(SYS_DATA			*psSysData,
 								 PVRSRV_DEVICE_NODE	*psDeviceNode)
 {
@@ -762,15 +784,14 @@ IMG_UINT32 SysGetInterruptSource(SYS_DATA			*psSysData,
 IMG_VOID SysClearInterrupts(SYS_DATA* psSysData, IMG_UINT32 ui32ClearBits)
 {
 	PVR_UNREFERENCED_PARAMETER(ui32ClearBits);
-#if defined(NO_HARDWARE)
 	PVR_UNREFERENCED_PARAMETER(psSysData);
-#else
+#if !defined(NO_HARDWARE)
 #if defined(SGX_OCP_NO_INT_BYPASS)
 	OSWriteHWReg(gpvOCPRegsLinAddr, EUR_CR_OCP_IRQSTATUS_2, 0x1);
 #endif
 	
 	OSReadHWReg(((PVRSRV_SGXDEV_INFO *)gpsSGXDevNode->pvDevice)->pvRegsBaseKM, EUR_CR_EVENT_HOST_CLEAR);
-#endif
+#endif	
 }
 
 #if defined(SGX_OCP_NO_INT_BYPASS)
@@ -795,7 +816,7 @@ IMG_VOID SysDisableSGXInterrupts(SYS_DATA *psSysData)
 		SYS_SPECIFIC_DATA_CLEAR(psSysSpecData, SYS_SPECIFIC_DATA_IRQ_ENABLED);
 	}
 }
-#endif
+#endif	
 
 PVRSRV_ERROR SysSystemPrePowerState(PVRSRV_SYS_POWER_STATE eNewPowerState)
 {
@@ -939,6 +960,14 @@ PVRSRV_ERROR SysDevicePostPowerState(IMG_UINT32				ui32DeviceIndex,
 	return eError;
 }
 
+#if defined(SYS_SUPPORTS_SGX_IDLE_CALLBACK)
+
+IMG_VOID SysSGXIdleTransition(IMG_BOOL bSGXIdle)
+{
+	PVR_DPF((PVR_DBG_MESSAGE, "SysSGXIdleTransition switch to %u", bSGXIdle));
+}
+
+#endif 
 
 PVRSRV_ERROR SysOEMFunction (	IMG_UINT32	ui32ID,
 								IMG_VOID	*pvIn,
