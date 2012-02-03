@@ -27,6 +27,13 @@
 struct hrtimer_clock_base;
 struct hrtimer_cpu_base;
 
+enum  hrtimer_base_type {
+        HRTIMER_BASE_MONOTONIC,
+        HRTIMER_BASE_REALTIME,
+        HRTIMER_BASE_BOOTTIME,
+        HRTIMER_MAX_CLOCK_BASES,
+};
+
 /*
  * Mode arguments of xxx_hrtimer functions:
  */
