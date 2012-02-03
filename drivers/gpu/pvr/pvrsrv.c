@@ -24,7 +24,6 @@
  *
  ******************************************************************************/
 
-#include <linux/slab.h>
 #include "services_headers.h"
 #include "buffer_manager.h"
 #include "pvr_bridge_km.h"
@@ -36,6 +35,7 @@
 #if defined(TTRACE)
 #include "ttrace.h"
 #endif
+#include "perfkm.h"
 
 #include "pvrversion.h"
 
@@ -264,6 +264,7 @@ PVRSRV_ERROR IMG_CALLCONV PVRSRVInit(PSYS_DATA psSysData)
 	PDUMPINIT();
 	g_ui32InitFlags |= INIT_DATA_ENABLE_PDUMPINIT;
 
+	PERFINIT();
 	return eError;
 
 Error:
@@ -284,6 +285,9 @@ IMG_VOID IMG_CALLCONV PVRSRVDeInit(PSYS_DATA psSysData)
 		PVR_DPF((PVR_DBG_ERROR,"PVRSRVDeInit: PVRSRVHandleDeInit failed - invalid param"));
 		return;
 	}
+
+	PERFDEINIT();
+
 #if defined(TTRACE)
 	
 	if ((g_ui32InitFlags & INIT_DATA_ENABLE_TTARCE) > 0)
@@ -643,6 +647,31 @@ PVRSRV_ERROR IMG_CALLCONV PollForValueKM (volatile IMG_UINT32*	pui32LinMemAddr,
 										  IMG_UINT32			ui32PollPeriodus,
 										  IMG_BOOL				bAllowPreemption)
 {
+#if defined (EMULATOR)
+	{
+		PVR_UNREFERENCED_PARAMETER(bAllowPreemption);
+		#if !defined(__linux__)
+		PVR_UNREFERENCED_PARAMETER(ui32PollPeriodus);
+		#endif	
+		
+		
+		
+		do
+		{
+			if((*pui32LinMemAddr & ui32Mask) == ui32Value)
+			{
+				return PVRSRV_OK;
+			}
+
+			#if defined(__linux__)
+			OSWaitus(ui32PollPeriodus);
+			#else
+			OSReleaseThreadQuanta();
+			#endif	
+
+		} while (ui32Timeoutus); 
+	}
+#else
 	{
 		IMG_UINT32	ui32ActualValue = 0xFFFFFFFFU; 
 
@@ -673,6 +702,7 @@ PVRSRV_ERROR IMG_CALLCONV PollForValueKM (volatile IMG_UINT32*	pui32LinMemAddr,
 		PVR_DPF((PVR_DBG_ERROR,"PollForValueKM: Timeout. Expected 0x%x but found 0x%x (mask 0x%x).",
 				ui32Value, ui32ActualValue, ui32Mask));
 	}
+#endif 
 
 	return PVRSRV_ERROR_TIMEOUT;
 }
@@ -809,7 +839,8 @@ PVRSRV_ERROR IMG_CALLCONV PVRSRVGetMiscInfoKM(PVRSRV_MISC_INFO *psMiscInfo)
 										|PVRSRV_MISC_INFO_DDKVERSION_PRESENT
 										|PVRSRV_MISC_INFO_CPUCACHEOP_PRESENT
 										|PVRSRV_MISC_INFO_RESET_PRESENT
-										|PVRSRV_MISC_INFO_FREEMEM_PRESENT))
+										|PVRSRV_MISC_INFO_FREEMEM_PRESENT
+										|PVRSRV_MISC_INFO_GET_REF_COUNT_PRESENT))
 	{
 		PVR_DPF((PVR_DBG_ERROR,"PVRSRVGetMiscInfoKM: invalid state request flags"));
 		return PVRSRV_ERROR_INVALID_PARAMS;
@@ -931,8 +962,8 @@ PVRSRV_ERROR IMG_CALLCONV PVRSRVGetMiscInfoKM(PVRSRV_MISC_INFO *psMiscInfo)
 		
 		psMiscInfo->aui32DDKVersion[0] = PVRVERSION_MAJ;
 		psMiscInfo->aui32DDKVersion[1] = PVRVERSION_MIN;
-		psMiscInfo->aui32DDKVersion[2] = PVRVERSION_BRANCH;
-		psMiscInfo->aui32DDKVersion[3] = PVRVERSION_BUILD;
+		psMiscInfo->aui32DDKVersion[2] = PVRVERSION_BUILD_HI;
+		psMiscInfo->aui32DDKVersion[3] = PVRVERSION_BUILD_LO;
 
 		pszStr = psMiscInfo->pszMemoryStr;
 		ui32StrLen = psMiscInfo->ui32MemoryStrLen;
@@ -1023,111 +1054,36 @@ PVRSRV_ERROR IMG_CALLCONV PVRSRVGetMiscInfoKM(PVRSRV_MISC_INFO *psMiscInfo)
 					return PVRSRV_ERROR_CACHEOP_FAILED;
 				}
 			}
-/* FIXME: Temporary fix needs to be revisited
- * LinuxMemArea struct listing is not registered for memory areas
- * wrapped through PVR2DMemWrap() call. For now, we are doing
- * cache flush/inv by grabbing the physical pages through
- * get_user_pages() for every blt call.
- */
-			else if (psMiscInfo->sCacheOpCtl.eCacheOpType ==
-						PVRSRV_MISC_INFO_CPUCACHEOP_CUSTOM_FLUSH)
-			{
-#if defined(CONFIG_OUTER_CACHE) && defined(PVR_NO_FULL_CACHE_OPS)
-				if (1)
-				{
-					IMG_SIZE_T 	uPageOffset, uPageCount;
-					IMG_VOID	*pvPageAlignedCPUVAddr;
-					IMG_SYS_PHYADDR	 	*psIntSysPAddr = IMG_NULL;
-					IMG_HANDLE	hOSWrapMem = IMG_NULL;
-					PVRSRV_ERROR eError;
-					int i;
-
-					uPageOffset = (IMG_UINTPTR_T)psMiscInfo->sCacheOpCtl.pvBaseVAddr & (HOST_PAGESIZE() - 1);
-					uPageCount =
-						HOST_PAGEALIGN(psMiscInfo->sCacheOpCtl.ui32Length + uPageOffset)/HOST_PAGESIZE();
-					pvPageAlignedCPUVAddr = (IMG_VOID *)((IMG_UINTPTR_T)psMiscInfo->sCacheOpCtl.pvBaseVAddr - uPageOffset);
-
-					if(OSAllocMem(PVRSRV_OS_PAGEABLE_HEAP,
-						uPageCount * sizeof(IMG_SYS_PHYADDR),
-						(IMG_VOID **)&psIntSysPAddr, IMG_NULL,
-						"Array of Page Addresses") != PVRSRV_OK)
-					{
-						PVR_DPF((PVR_DBG_ERROR,"PVRSRVWrapExtMemoryKM: Failed to alloc memory for block"));
-						return PVRSRV_ERROR_OUT_OF_MEMORY;
-					}
-
-					eError = OSAcquirePhysPageAddr(pvPageAlignedCPUVAddr,
-										uPageCount * HOST_PAGESIZE(),
-										psIntSysPAddr,
-										&hOSWrapMem);
-					for (i = 0; i < uPageCount; i++)
-					{
-						outer_flush_range(psIntSysPAddr[i].uiAddr, psIntSysPAddr[i].uiAddr + HOST_PAGESIZE() -1);
-					}
-
-					OSFreeMem(PVRSRV_OS_PAGEABLE_HEAP,
-						uPageCount * sizeof(IMG_SYS_PHYADDR),
-						psIntSysPAddr, IMG_NULL);
-
-					kfree(hOSWrapMem);
-
-				}
-#else
-				OSFlushCPUCacheKM();
-#endif /* CONFIG_OUTER_CACHE && PVR_NO_FULL_CACHE_OPS*/
-			}
-			else if (psMiscInfo->sCacheOpCtl.eCacheOpType ==
-							PVRSRV_MISC_INFO_CPUCACHEOP_CUSTOM_INV)
-			{
-#if defined(CONFIG_OUTER_CACHE)
-				/* TODO: Need to check full cache invalidation, but
-				 * currently it is not exported through
-				 * outer_cache interface.
-				 */
-				if (1)
-				{
-					IMG_SIZE_T 	uPageOffset, uPageCount;
-					IMG_VOID	*pvPageAlignedCPUVAddr;
-					IMG_SYS_PHYADDR	 	*psIntSysPAddr = IMG_NULL;
-					IMG_HANDLE	hOSWrapMem = IMG_NULL;
-					PVRSRV_ERROR eError;
-					int i;
-
-					uPageOffset = (IMG_UINTPTR_T)psMiscInfo->sCacheOpCtl.pvBaseVAddr & (HOST_PAGESIZE() - 1);
-					uPageCount =
-						HOST_PAGEALIGN(psMiscInfo->sCacheOpCtl.ui32Length + uPageOffset)/HOST_PAGESIZE();
-					pvPageAlignedCPUVAddr = (IMG_VOID *)((IMG_UINTPTR_T)psMiscInfo->sCacheOpCtl.pvBaseVAddr - uPageOffset);
-
-					if(OSAllocMem(PVRSRV_OS_PAGEABLE_HEAP,
-						uPageCount * sizeof(IMG_SYS_PHYADDR),
-						(IMG_VOID **)&psIntSysPAddr, IMG_NULL,
-						"Array of Page Addresses") != PVRSRV_OK)
-					{
-						PVR_DPF((PVR_DBG_ERROR,"PVRSRVWrapExtMemoryKM: Failed to alloc memory for block"));
-						return PVRSRV_ERROR_OUT_OF_MEMORY;
-					}
-
-					eError = OSAcquirePhysPageAddr(pvPageAlignedCPUVAddr,
-										uPageCount * HOST_PAGESIZE(),
-										psIntSysPAddr,
-										&hOSWrapMem);
-					for (i = 0; i < uPageCount; i++)
-					{
-						outer_inv_range(psIntSysPAddr[i].uiAddr, psIntSysPAddr[i].uiAddr + HOST_PAGESIZE() -1);
-					}
-
-					OSFreeMem(PVRSRV_OS_PAGEABLE_HEAP,
-						uPageCount * sizeof(IMG_SYS_PHYADDR),
-						psIntSysPAddr, IMG_NULL);
-
-					kfree(hOSWrapMem);
-
-				}
-
-#endif /* CONFIG_OUTER_CACHE */
-			}
-
 		}
+	}
+
+	if((psMiscInfo->ui32StateRequest & PVRSRV_MISC_INFO_GET_REF_COUNT_PRESENT) != 0UL)
+	{
+#if !defined (SUPPORT_SID_INTERFACE)
+		PVRSRV_KERNEL_MEM_INFO *psKernelMemInfo;
+		PVRSRV_PER_PROCESS_DATA *psPerProc;
+#endif
+
+		psMiscInfo->ui32StatePresent |= PVRSRV_MISC_INFO_GET_REF_COUNT_PRESENT;
+
+#if defined (SUPPORT_SID_INTERFACE)
+		PVR_DBG_BREAK
+#else
+		
+		psPerProc = PVRSRVFindPerProcessData();
+
+		if(PVRSRVLookupHandle(psPerProc->psHandleBase,
+							  (IMG_PVOID *)&psKernelMemInfo,
+							  psMiscInfo->sGetRefCountCtl.u.psKernelMemInfo,
+							  PVRSRV_HANDLE_TYPE_MEM_INFO) != PVRSRV_OK)
+		{
+			PVR_DPF((PVR_DBG_ERROR, "PVRSRVGetMiscInfoKM: "
+									"Can't find kernel meminfo"));
+			return PVRSRV_ERROR_INVALID_PARAMS;
+		}
+
+		psMiscInfo->sGetRefCountCtl.ui32RefCount = psKernelMemInfo->ui32RefCount;
+#endif
 	}
 
 #if defined(PVRSRV_RESET_ON_HWTIMEOUT)
@@ -1405,3 +1361,4 @@ IMG_VOID PVRSRVScheduleDevicesKM(IMG_VOID)
 {
 	PVRSRVScheduleDeviceCallbacks();
 }
+
