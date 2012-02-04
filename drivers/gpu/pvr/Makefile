@@ -4,7 +4,6 @@ ccflags-y += -Idrivers/gpu/pvr -Idrivers/gpu/pvr/omap4 -Idrivers/video/omap2
 ccflags-y += \
 	-DSUPPORT_SGX \
 	-DTRANSFER_QUEUE \
-	-DSGX_DYNAMIC_TIMING_INFO \
 	-DSUPPORT_HW_RECOVERY \
 	-DLDM_PLATFORM \
 	-DSUPPORT_SGX_NEW_STATUS_VALS \
