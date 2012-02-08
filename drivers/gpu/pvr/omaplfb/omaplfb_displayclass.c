@@ -791,11 +791,11 @@ void OMAPLFBSwapHandler(OMAPLFB_BUFFER *psBuffer)
 	psDevInfo->sPVRJTable.pfnPVRSRVCmdComplete((IMG_HANDLE)psBuffer->hCmdComplete, IMG_TRUE);
 }
 
-//#if defined(CONFIG_DSSCOMP)
+#if defined(CONFIG_DSSCOMP)
 
 #include <mach/tiler.h>
 #include <video/dsscomp.h>
-//#include <plat/dsscomp.h>
+#include <plat/dsscomp.h>
 
 //void sgx_idle_log_flip(void);
 
@@ -825,7 +825,7 @@ static IMG_BOOL ProcessFlipV1(IMG_HANDLE hCmdCookie,
 	{
 		psBuffer->hCmdComplete = (OMAPLFB_HANDLE)hCmdCookie;
 		psBuffer->ulSwapInterval = ulSwapInterval;
-#if defined(CONFIG_DSSCOMP)
+//#if defined(CONFIG_DSSCOMP)
 		if (is_tiler_addr(psBuffer->sSysAddr.uiAddr)) {
 			IMG_UINT32 w = psBuffer->psDevInfo->sDisplayDim.ui32Width;
 			IMG_UINT32 h = psBuffer->psDevInfo->sDisplayDim.ui32Height;
@@ -853,7 +853,7 @@ static IMG_BOOL ProcessFlipV1(IMG_HANDLE hCmdCookie,
 					      dsscomp_proxy_cmdcomplete,
 					      (void *) psBuffer->hCmdComplete);
 		} else
-#endif
+//#endif
 		 {
 			OMAPLFBQueueBufferForSwap(psSwapChain, psBuffer);
 		}
@@ -864,7 +864,7 @@ static IMG_BOOL ProcessFlipV1(IMG_HANDLE hCmdCookie,
 	return IMG_TRUE;
 }
 
-#if defined(CONFIG_DSSCOMP)
+//#if defined(CONFIG_DSSCOMP)
 
 #include "servicesint.h"
 #include "services.h"
@@ -912,7 +912,7 @@ static IMG_BOOL ProcessFlipV2(IMG_HANDLE hCmdCookie,
 		/* NV12 buffers do not need meminfos */
 		if(psDssData->ovls[k].cfg.color_mode == OMAP_DSS_COLOR_NV12)
 		{
-#if defined(SUPPORT_NV12_FROM_2_HWADDRS)
+//#if defined(SUPPORT_NV12_FROM_2_HWADDRS)
 			/* must have still 2 meminfos in array */
 			BUG_ON(i + 1 >= ui32NumMemInfos);
 			psDssData->ovls[k].ba = (u32)phyAddr.uiAddr;
@@ -920,13 +920,13 @@ static IMG_BOOL ProcessFlipV2(IMG_HANDLE hCmdCookie,
 			i++;
 			psDevInfo->sPVRJTable.pfnPVRSRVDCMemInfoGetCpuPAddr(ppsMemInfos[i], 0, &phyAddr);
 			psDssData->ovls[k].uv = (u32)phyAddr.uiAddr;
-#else
+//#else
 
 			psDssData->ovls[k].ba = (u32)phyAddr.uiAddr;
 
 			psDevInfo->sPVRJTable.pfnPVRSRVDCMemInfoGetCpuPAddr(ppsMemInfos[i], (uByteSize * 2) / 3, &phyAddr);
 			psDssData->ovls[k].uv = (u32)phyAddr.uiAddr;
-#endif 
+//#endif 
 			continue;
 		}
 		/* check if it is a TILER buffer */
@@ -1217,7 +1217,7 @@ static OMAPLFB_ERROR OMAPLFBInitFBDev(OMAPLFB_DEVINFO *psDevInfo)
 		psPVRFBInfo->ulFBSize = FBSize;
 		psPVRFBInfo->bIs2D = OMAPLFB_FALSE;
 		psPVRFBInfo->psPageList = IMG_NULL;
-//		psPVRFBInfo->psIONHandle = IMG_NULL;
+		psPVRFBInfo->psIONHandle = IMG_NULL;
 	}
 	psPVRFBInfo->ulBufferSize = psPVRFBInfo->ulHeight * psPVRFBInfo->ulByteStride;
 	
@@ -1294,10 +1294,10 @@ static void OMAPLFBDeInitFBDev(OMAPLFB_DEVINFO *psDevInfo)
 	psLINFBOwner = psLINFBInfo->fbops->owner;
 
 	kfree(psPVRFBInfo->psPageList);
-/*	if (psPVRFBInfo->psIONHandle)
+	if (psPVRFBInfo->psIONHandle)
 	{
 		ion_free(gpsIONClient, psPVRFBInfo->psIONHandle);
-	} */
+	}
 
 	if (psLINFBInfo->fbops->fb_release != NULL) 
 	{
