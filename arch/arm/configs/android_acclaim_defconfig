@@ -1,7 +1,7 @@
 #
 # Automatically generated make config: don't edit
 # Linux kernel version: 2.6.35.7
-# Sun Feb  5 03:54:15 2012
+# Thu Feb  9 14:46:17 2012
 #
 CONFIG_ARM=y
 CONFIG_HAVE_PWM=y
@@ -357,6 +357,7 @@ CONFIG_COMMON_CLKDEV=y
 # CONFIG_PCI_SYSCALL is not set
 # CONFIG_ARCH_SUPPORTS_MSI is not set
 # CONFIG_PCCARD is not set
+CONFIG_PL310_ERRATA_727915=y
 
 #
 # Kernel Features
@@ -738,7 +739,9 @@ CONFIG_WEXT_CORE=y
 CONFIG_WEXT_PROC=y
 CONFIG_WEXT_PRIV=y
 # CONFIG_WIMAX is not set
-# CONFIG_RFKILL is not set
+CONFIG_RFKILL=y
+CONFIG_RFKILL_PM=y
+# CONFIG_RFKILL_INPUT is not set
 # CONFIG_NET_9P is not set
 # CONFIG_CAIF is not set
 
@@ -794,6 +797,7 @@ CONFIG_KERNEL_DEBUGGER_CORE=y
 # CONFIG_TI_DAC7512 is not set
 CONFIG_UID_STAT=y
 # CONFIG_BMP085 is not set
+# CONFIG_WL127X_RFKILL is not set
 # CONFIG_APANIC is not set
 # CONFIG_C2PORT is not set
 
@@ -823,7 +827,17 @@ CONFIG_SCSI_MOD=y
 # CONFIG_SCSI_DMA is not set
 # CONFIG_SCSI_NETLINK is not set
 # CONFIG_ATA is not set
-# CONFIG_MD is not set
+CONFIG_MD=y
+# CONFIG_BLK_DEV_MD is not set
+CONFIG_BLK_DEV_DM=y
+# CONFIG_DM_DEBUG is not set
+CONFIG_DM_CRYPT=y
+# CONFIG_DM_SNAPSHOT is not set
+# CONFIG_DM_MIRROR is not set
+# CONFIG_DM_ZERO is not set
+# CONFIG_DM_MULTIPATH is not set
+# CONFIG_DM_DELAY is not set
+CONFIG_DM_UEVENT=y
 CONFIG_NETDEVICES=y
 # CONFIG_DUMMY is not set
 # CONFIG_BONDING is not set
