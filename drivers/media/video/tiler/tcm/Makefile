@@ -1,2 +1,1 @@
-obj-$(CONFIG_TILER_OMAP) += tcm_sita.o
-
+obj-$(CONFIG_TI_TILER) += tcm-sita.o
