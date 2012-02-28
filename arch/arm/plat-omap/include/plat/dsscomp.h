@@ -1,6 +1,10 @@
 #ifndef _ARCH_ARM_PLAT_OMAP_DSSCOMP_H
 #define _ARCH_ARM_PLAT_OMAP_DSSCOMP_H
 
+struct dsscomp_platform_data {
+	unsigned int tiler1d_slotsz;
+};
+
 /* queuing operations */
 typedef struct dsscomp_data *dsscomp_t;		/* handle */
 
