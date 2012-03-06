@@ -44,6 +44,7 @@ obj-$(CONFIG_OMAP_REMOTE_PROC) += remoteproc.o
 obj-$(CONFIG_OMAP_PM_NOOP) += omap-pm-noop.o
 obj-$(CONFIG_OMAP_PM) += omap-pm.o
 obj-$(CONFIG_DSSCOMP) += omap_dsscomp.o
+obj-$(CONFIG_ION_OMAP) += sgx_omaplfb.o
 
 obj-$(CONFIG_ARCH_OMAP4) += hwspinlock.o
 
