@@ -17,5 +17,6 @@ extern const struct lpddr2_timings timings_samsung_200_mhz;
 extern const struct lpddr2_timings timings_samsung_400_mhz;
 extern const struct lpddr2_min_tck min_tck_samsung;
 extern struct lpddr2_device_info samsung_4G_S4;
+extern struct lpddr2_device_info samsung_2G_S4;
 
 #endif

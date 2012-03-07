@@ -99,7 +99,12 @@ static struct omap_board_mux board_mux[] __initdata = {
 static inline void ramconsole_reserve_sdram(void)
 {
 	// make the ram console the size of the printk log buffer
-    reserve_bootmem(ACCLAIM_RAM_CONSOLE_START, (1 << CONFIG_LOG_BUF_SHIFT), 0);
+    ulong sdram_size = get_sdram_size();
+    if (sdram_size == SZ_512M) {
+        reserve_bootmem(ACCLAIM_RAM_CONSOLE_512MB_START, ACCLAIM_RAM_CONSOLE_SIZE, 0);
+    } else {
+        reserve_bootmem(ACCLAIM_RAM_CONSOLE_START, ACCLAIM_RAM_CONSOLE_SIZE, 0);
+    }
 }
 #else
 static inline void ramconsole_reserve_sdram(void) {}
