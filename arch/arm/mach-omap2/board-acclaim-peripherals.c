@@ -1104,9 +1104,19 @@ static __initdata struct emif_device_details emif_devices_samsung = {
 	.cs1_device = 0
 };
 
+static __initdata struct emif_device_details emif_devices_512_samsung = {
+	.cs0_device = &samsung_2G_S4,
+	.cs1_device = 0
+};
+
 static __initdata struct emif_device_details emif_devices_elpida = {
 	.cs0_device = &elpida_2G_S4,
 	.cs1_device = &elpida_2G_S4
+};
+
+static __initdata struct emif_device_details emif_devices_512_elpida = {
+	.cs0_device = &elpida_2G_S4,
+	.cs1_device = 0
 };
 
 static void __init omap_i2c_hwspinlock_init(int bus_id, unsigned int
@@ -1410,7 +1420,13 @@ static void omap4_4430sdp_wifi_init(void)
 #ifdef CONFIG_ANDROID_RAM_CONSOLE
 static struct resource ram_console_resource = {
 	.start  = ACCLAIM_RAM_CONSOLE_START,
-	.end    = (ACCLAIM_RAM_CONSOLE_START + (1 << CONFIG_LOG_BUF_SHIFT) - 1),
+	.end    = ACCLAIM_RAM_CONSOLE_END,
+	.flags  = IORESOURCE_MEM,
+};
+
+static struct resource ram_console_resource_512 = {
+	.start  = ACCLAIM_RAM_CONSOLE_512MB_START,
+	.end    = ACCLAIM_RAM_CONSOLE_512MB_END,
 	.flags  = IORESOURCE_MEM,
 };
 
@@ -1421,9 +1437,21 @@ static struct platform_device ram_console_device = {
 	.resource       = &ram_console_resource,
 };
 
+static struct platform_device ram_console_device_512 = {
+	.name           = "ram_console",
+	.id             = 0,
+	.num_resources  = 1,
+	.resource       = &ram_console_resource_512,
+};
+
 static inline void ramconsole_init(void)
 {
-	platform_device_register(&ram_console_device);
+	ulong sdram_size = get_sdram_size();
+	if (sdram_size == SZ_512M) {
+		platform_device_register(&ram_console_device_512);
+	} else {
+		platform_device_register(&ram_console_device);
+	}
 }
 #else
 static inline void ramconsole_init(void) {}
@@ -1433,6 +1461,7 @@ void __init acclaim_peripherals_init(void)
 {
 	int status;
 	int package = OMAP_PACKAGE_CBS;
+	ulong sdram_size = get_sdram_size();
 
 	ramconsole_init();
 
@@ -1442,14 +1471,35 @@ void __init acclaim_peripherals_init(void)
 	acclaim_board_init();
 
 	if (sdram_vendor() == SAMSUNG_SDRAM) {
-		omap_emif_setup_device_details(&emif_devices_samsung, &emif_devices_samsung);
+		if (sdram_size == SZ_512M) {
+			omap_emif_setup_device_details(&emif_devices_512_samsung, &emif_devices_512_samsung);
+		} else if (sdram_size == SZ_1G) {
+			omap_emif_setup_device_details(&emif_devices_samsung, &emif_devices_samsung);
+		} else {
+			pr_err("sdram memory size does not exist, default to using 1024MB \n");
+			omap_emif_setup_device_details(&emif_devices_samsung, &emif_devices_samsung);
+		}
 		printk(KERN_INFO"Samsung DDR Memory \n");
 	} else if (sdram_vendor() == ELPIDA_SDRAM) {
-		omap_emif_setup_device_details(&emif_devices_elpida, &emif_devices_elpida);
+		if (sdram_size == SZ_512M) {
+			omap_emif_setup_device_details(&emif_devices_512_elpida, &emif_devices_512_elpida);
+		} else if (sdram_size == SZ_1G) {
+			omap_emif_setup_device_details(&emif_devices_elpida, &emif_devices_elpida);
+		} else {
+			pr_err("sdram memory size does not exist, default to using 1024MB \n");
+			omap_emif_setup_device_details(&emif_devices_elpida, &emif_devices_elpida);
+		}
 		printk(KERN_INFO"Elpida DDR Memory \n");
 	} else if (sdram_vendor() == HYNIX_SDRAM) {
 		/* Re-use ELPIDA timings as they are absolutely the same */
-		omap_emif_setup_device_details(&emif_devices_elpida, &emif_devices_elpida);
+		if (sdram_size == SZ_512M) {
+			omap_emif_setup_device_details(&emif_devices_512_elpida, &emif_devices_512_elpida);
+		} else if (sdram_size == SZ_1G) {
+			omap_emif_setup_device_details(&emif_devices_elpida, &emif_devices_elpida);
+		} else {
+			pr_err("sdram memory size does not exist, default to using 1024MB \n");
+			omap_emif_setup_device_details(&emif_devices_elpida, &emif_devices_elpida);
+		}
 		printk(KERN_INFO"Hynix DDR Memory \n");
 	} else
 		pr_err("Memory type does not exist\n");
