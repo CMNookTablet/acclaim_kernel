@@ -274,7 +274,7 @@ biquad_adaptive_filter_mixer_controls (struct snd_soc_codec *codec)
 
 	err = snd_soc_add_controls(codec, snd_adaptive_controls,
 			     ARRAY_SIZE(snd_adaptive_controls));
-	dprintk("Adding controls\n",);
+	dprintk("Adding controls\n");
 	return err;
 }
 
@@ -682,23 +682,42 @@ aic3100_update_biquad_array (struct snd_soc_codec *codec, int speaker_active,
 			 * We will perform a buffer Switch only if the speaker_active Flag
 			 * and the Bit 1 status do not match
 			 */
+                        switch (dac_ram_value & 0x3) {
+                            case 0:
+                                if (aic3100_eq_select == AIC3100_SPK_EQ_SELECT) {
+                                    data[1] = data[0];
+                                } else {
+                                    data[1] = (data[0]) | ADAPTIVE_BUFFER_SWITCH;
+                                }
+                                break;
+                            case 1:
+                                 if (aic3100_eq_select == AIC3100_SPK_EQ_SELECT) {
+                                    data[1] = (data[0]) & (~ADAPTIVE_BUFFER_SWITCH);
+                                } else {
+                                    data[1] = data[0];
+                                }
+                                break;
+                            case 2:
+                                 if (aic3100_eq_select == AIC3100_SPK_EQ_SELECT) {
+                                    data[1] = (data[0]) | ADAPTIVE_BUFFER_SWITCH;
+                                } else {
+                                    data[1] = data[0];
+                                }
+                                break;
+                            case 3:
+                                 if (aic3100_eq_select == AIC3100_SPK_EQ_SELECT) {
+                                    data[1] = data[0];
+                                } else {
+                                    data[1] = (data[0]) & (~ADAPTIVE_BUFFER_SWITCH);
+                                }
+                                break;
+                            default:
+                                data[1] = data[0];
+                                break;
+                        }
 
-			if ( ((dac_ram_value & ADAPTIVE_BUFFER_SWITCH) != 0) &&
-			     (aic3100_eq_select == AIC3100_SPK_EQ_SELECT)) {
-				/* set the bitmask and update the register */
-				data[1] = (data[0]) | ADAPTIVE_BUFFER_SWITCH;
-				data[0] = DAC_RAM_CNTRL;
-			} else if (((dac_ram_value & ADAPTIVE_BUFFER_SWITCH) == 0) &&
-				   (aic3100_eq_select == AIC3100_HP_EQ_SELECT)) {
-				/* set the bitmask and update the register */
-				data[1] = (data[0]) | ADAPTIVE_BUFFER_SWITCH;
-				data[0] = DAC_RAM_CNTRL;
-			}
-			else {
-				/* set the bitmask and update the register */
-				data[1] = data[0];
-				data[0] = DAC_RAM_CNTRL;
-			}
+                        data[0] = DAC_RAM_CNTRL;
+
 			if (i2c_master_send (i2c, data, 2) != 2) {
 				printk ("Cannot write Value into register address for Page 8[1]\n");
 				ret_val = -1;

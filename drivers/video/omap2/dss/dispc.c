@@ -1851,6 +1851,17 @@ void dispc_enable_zorder(enum omap_plane plane, bool enable)
 	enable_clocks(0);
 }
 
+void dispc_enable_pre_mult_alpha(enum omap_plane plane, bool enable)
+{
+	u32 val;
+
+	BUG_ON(plane == OMAP_DSS_WB);
+	enable_clocks(1);
+	val = dispc_read_reg(dispc_reg_att[plane]);
+	val = FLD_MOD(val, enable, 28, 28);
+	dispc_write_reg(dispc_reg_att[plane], val);
+	enable_clocks(0);
+}
 
 void dispc_set_idle_mode(void)
 {
@@ -5098,7 +5109,7 @@ int omap_dispc_run_on_irq(u32 irqmask, void (*on_isr_cb)(void *), void *data)
 
 	wait_for_completion(&completion);
 
-	omap_dispc_unregister_isr(dispc_irq_wait_handler, &ctx, irqmask);
+	omap_dispc_unregister_isr_sync(dispc_irq_wait_handler, &ctx, irqmask);
 
 	return 0;
 }

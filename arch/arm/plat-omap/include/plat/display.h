@@ -494,6 +494,7 @@ struct omap_overlay_info {
 	enum device_n_buffer_type field;
 	u16 pic_height;	/* required for interlacing with cropping */
 	bool out_wb; /* true when this overlay only feeds wb pipeline */
+	bool pre_mult_alpha;
 };
 
 struct omap_overlay {
