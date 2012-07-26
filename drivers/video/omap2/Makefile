@@ -5,3 +5,4 @@ obj-y += dss/
 obj-y += omapfb/
 obj-y += displays/
 obj-y += dsscomp/
+obj-$(CONFIG_OMAPLFB) += omaplfb/
