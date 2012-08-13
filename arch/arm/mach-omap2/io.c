@@ -32,6 +32,7 @@
 #include <plat/sdrc.h>
 #include <plat/gpmc.h>
 #include <plat/serial.h>
+#include <plat/vram.h>
 
 #include "clock2xxx.h"
 #include "clock3xxx.h"
