@@ -127,6 +127,7 @@ MACHINE_START(OMAP4_ACCLAIM, "acclaim")
 	.io_pg_offst	= ((0xfa000000) >> 18) & 0xfffc,
 	.boot_params	= 0x80000100,
 	.map_io		= omap_4430_acclaim_map_io,
+	.reserve	= omap_reserve,
 	.init_irq	= omap_4430_acclaim_init_irq,
 	.init_machine	= omap_4430_acclaim_init,
 	.timer		= &omap_timer,
