@@ -35,14 +35,8 @@ extern ulong get_sdram_size(void);
 #define BN_USB_MANUFACTURER_NAME    "B&N"
 #define BN_USB_PRODUCT_NAME	    "NOOK Tablet"
 
+#define ACCLAIM_RAM_CONSOLE_START        (0xA0000000)
 #define ACCLAIM_RAM_CONSOLE_SIZE         (1 << CONFIG_LOG_BUF_SHIFT)
-// This address is the beginning of the 2nd bank
-// if SDRAM size > 512MB
-#define ACCLAIM_RAM_CONSOLE_START        0xA0000000
-#define ACCLAIM_RAM_CONSOLE_END          (ACCLAIM_RAM_CONSOLE_START + ACCLAIM_RAM_CONSOLE_SIZE - 1)
-// if SDRAM size = 512MB
-#define ACCLAIM_RAM_CONSOLE_512MB_START  (ACCLAIM_RAM_CONSOLE_512MB_END - ACCLAIM_RAM_CONSOLE_SIZE + 1)
-#define ACCLAIM_RAM_CONSOLE_512MB_END    (0x9C000000 - 1)
 
 struct boxer_panel_data {
 	struct regulator *vlcd;

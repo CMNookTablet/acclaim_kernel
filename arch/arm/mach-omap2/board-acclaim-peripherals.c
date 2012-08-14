@@ -56,6 +56,7 @@
 #include <plat/omap4-keypad.h>
 #include <plat/hwspinlock.h>
 
+#include "omap4_ion.h"
 #include "mux.h"
 #include "hsmmc.h"
 #include "smartreflex-class3.h"
@@ -1420,13 +1421,9 @@ static void omap4_4430sdp_wifi_init(void)
 #ifdef CONFIG_ANDROID_RAM_CONSOLE
 static struct resource ram_console_resource = {
 	.start  = ACCLAIM_RAM_CONSOLE_START,
-	.end    = ACCLAIM_RAM_CONSOLE_END,
-	.flags  = IORESOURCE_MEM,
-};
-
-static struct resource ram_console_resource_512 = {
-	.start  = ACCLAIM_RAM_CONSOLE_512MB_START,
-	.end    = ACCLAIM_RAM_CONSOLE_512MB_END,
+	.end    = ACCLAIM_RAM_CONSOLE_START
+			+ ACCLAIM_RAM_CONSOLE_SIZE 
+			- 1,
 	.flags  = IORESOURCE_MEM,
 };
 
@@ -1437,21 +1434,9 @@ static struct platform_device ram_console_device = {
 	.resource       = &ram_console_resource,
 };
 
-static struct platform_device ram_console_device_512 = {
-	.name           = "ram_console",
-	.id             = 0,
-	.num_resources  = 1,
-	.resource       = &ram_console_resource_512,
-};
-
 static inline void ramconsole_init(void)
 {
-	ulong sdram_size = get_sdram_size();
-	if (sdram_size == SZ_512M) {
-		platform_device_register(&ram_console_device_512);
-	} else {
-		platform_device_register(&ram_console_device);
-	}
+	platform_device_register(&ram_console_device);
 }
 #else
 static inline void ramconsole_init(void) {}
@@ -1548,6 +1533,9 @@ void __init acclaim_peripherals_init(void)
 	spi_register_board_info(sdp4430_spi_board_info,
 			ARRAY_SIZE(sdp4430_spi_board_info));
 
+#ifdef CONFIG_ION_OMAP
+	omap4_register_ion();
+#endif
 	acclaim_panel_init();
 	enable_board_wakeup_source();
 	omap_voltage_register_pmic(&omap_pmic_core, "core");

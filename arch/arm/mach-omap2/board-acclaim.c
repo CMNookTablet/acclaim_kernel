@@ -40,6 +40,7 @@
 #include <mach/emif.h>
 #include <mach/lpddr2-elpida.h>
 #include <mach/board-4430-acclaim.h>
+#include <mach/dmm.h>
 
 #include <asm/mach-types.h>
 #include <asm/mach/arch.h>
@@ -53,6 +54,8 @@
 #include <plat/usb.h>
 #include <plat/omap_device.h>
 #include <plat/omap_hwmod.h>
+#include <linux/memblock.h>
+#include "omap4_ion.h"
 
 #include "mux.h"
 #include "smartreflex-class3.h"
@@ -99,12 +102,11 @@ static struct omap_board_mux board_mux[] __initdata = {
 static inline void ramconsole_reserve_sdram(void)
 {
 	// make the ram console the size of the printk log buffer
-    ulong sdram_size = get_sdram_size();
-    if (sdram_size == SZ_512M) {
-        reserve_bootmem(ACCLAIM_RAM_CONSOLE_512MB_START, ACCLAIM_RAM_CONSOLE_SIZE, 0);
-    } else {
-        reserve_bootmem(ACCLAIM_RAM_CONSOLE_START, ACCLAIM_RAM_CONSOLE_SIZE, 0);
-    }
+	int ret;
+	ret = memblock_remove (ACCLAIM_RAM_CONSOLE_START, 
+			       ACCLAIM_RAM_CONSOLE_SIZE);
+	if (ret)
+		printk("unable to remove memory for ram console");
 }
 #else
 static inline void ramconsole_reserve_sdram(void) {}
@@ -113,13 +115,25 @@ static inline void ramconsole_reserve_sdram(void) {}
 static void __init omap_4430_acclaim_init(void)
 {
 	acclaim_peripherals_init();
+	omap_dmm_init();
 }
 
 static void __init omap_4430_acclaim_map_io(void)
 {
-	ramconsole_reserve_sdram();
 	omap2_set_globals_443x();
 	omap44xx_map_common_io();
+}
+
+static void __init acclaim_reserve(void)
+{
+	ramconsole_reserve_sdram();
+	/* do the static reservations first */
+	memblock_remove(PHYS_ADDR_SMC_MEM, PHYS_ADDR_SMC_SIZE);
+
+#ifdef CONFIG_ION_OMAP
+	omap_ion_init();
+#endif
+	omap_reserve();
 }
 
 MACHINE_START(OMAP4_ACCLAIM, "acclaim")
@@ -127,7 +141,7 @@ MACHINE_START(OMAP4_ACCLAIM, "acclaim")
 	.io_pg_offst	= ((0xfa000000) >> 18) & 0xfffc,
 	.boot_params	= 0x80000100,
 	.map_io		= omap_4430_acclaim_map_io,
-	.reserve	= omap_reserve,
+	.reserve	= acclaim_reserve,
 	.init_irq	= omap_4430_acclaim_init_irq,
 	.init_machine	= omap_4430_acclaim_init,
 	.timer		= &omap_timer,

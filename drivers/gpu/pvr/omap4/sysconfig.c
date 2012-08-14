@@ -24,6 +24,12 @@
  *
  ******************************************************************************/
 
+#include <linux/debugfs.h>
+#include <linux/hrtimer.h>
+#include <linux/ktime.h>
+#include <linux/seq_file.h>
+#include <linux/vmalloc.h>
+
 #include "sysconfig.h"
 #include "services_headers.h"
 #include "kerneldisplay.h"
@@ -40,17 +46,20 @@ SYS_DATA  gsSysData;
 static SYS_SPECIFIC_DATA gsSysSpecificData;
 SYS_SPECIFIC_DATA *gpsSysSpecificData;
 
-static IMG_UINT32	gui32SGXDeviceID;
-static SGX_DEVICE_MAP	gsSGXDeviceMap;
-static PVRSRV_DEVICE_NODE *gpsSGXDevNode;
+static IMG_UINT32			gui32SGXDeviceID;
+static SGX_DEVICE_MAP		gsSGXDeviceMap;
+static PVRSRV_DEVICE_NODE	*gpsSGXDevNode;
 
-#define DEVICE_SGX_INTERRUPT (1 << 0)
+extern bool sgx_idle_logging;
+extern uint sgx_idle_mode;
+extern uint sgx_idle_timeout;
+extern uint sgx_apm_latency;
 
 #if defined(NO_HARDWARE) || defined(SGX_OCP_REGS_ENABLED)
 static IMG_CPU_VIRTADDR gsSGXRegsCPUVAddr;
 #endif
 
-#if defined(LDM_PLATFORM) && !defined(PVR_DRI_DRM_NOT_PCI)
+#if defined(PVR_LINUX_DYNAMIC_SGX_RESOURCE_INFO)
 extern struct platform_device *gpsPVRLDMDev;
 #endif
 
@@ -60,6 +69,8 @@ IMG_UINT32 PVRSRV_BridgeDispatchKM(IMG_UINT32	Ioctl,
 								   IMG_BYTE		*pOutBuf,
 								   IMG_UINT32	OutBufLen,
 								   IMG_UINT32	*pdwBytesTransferred);
+
+//static void sgx_idle_init(void);
 
 #if defined(SGX_OCP_REGS_ENABLED)
 
@@ -155,7 +166,7 @@ static PVRSRV_ERROR SysLocateDevices(SYS_DATA *psSysData)
 
 #else 
 #if defined(PVR_LINUX_DYNAMIC_SGX_RESOURCE_INFO)
-
+	
 	dev_res = platform_get_resource(gpsPVRLDMDev, IORESOURCE_MEM, 0);
 	if (dev_res == NULL)
 	{
@@ -169,7 +180,7 @@ static PVRSRV_ERROR SysLocateDevices(SYS_DATA *psSysData)
 		PVR_DPF((PVR_DBG_ERROR, "%s: platform_get_irq failed (%d)", __FUNCTION__, -dev_irq));
 		return PVRSRV_ERROR_INVALID_DEVICE;
 	}
-
+	
 	gsSGXDeviceMap.sRegsSysPBase.uiAddr = dev_res->start;
 	gsSGXDeviceMap.sRegsCpuPBase =
 		SysSysPAddrToCpuPAddr(gsSGXDeviceMap.sRegsSysPBase);
@@ -180,14 +191,14 @@ static PVRSRV_ERROR SysLocateDevices(SYS_DATA *psSysData)
 
 	gsSGXDeviceMap.ui32IRQ = dev_irq;
 	PVR_TRACE(("SGX IRQ: %d", gsSGXDeviceMap.ui32IRQ));
-#else
+#else	
 	gsSGXDeviceMap.sRegsSysPBase.uiAddr = SYS_OMAP4430_SGX_REGS_SYS_PHYS_BASE;
 	gsSGXDeviceMap.sRegsCpuPBase = SysSysPAddrToCpuPAddr(gsSGXDeviceMap.sRegsSysPBase);
 	gsSGXDeviceMap.ui32RegsSize = SYS_OMAP4430_SGX_REGS_SIZE;
 
 	gsSGXDeviceMap.ui32IRQ = SYS_OMAP4430_SGX_IRQ;
 
-#endif
+#endif	
 #if defined(SGX_OCP_REGS_ENABLED)
 	gsSGXRegsCPUVAddr = OSMapPhysToLin(gsSGXDeviceMap.sRegsCpuPBase,
 	gsSGXDeviceMap.ui32RegsSize,
@@ -200,7 +211,7 @@ static PVRSRV_ERROR SysLocateDevices(SYS_DATA *psSysData)
 		return PVRSRV_ERROR_BAD_MAPPING;
 	}
 
-
+	
 	gsSGXDeviceMap.pvRegsCpuVBase = gsSGXRegsCPUVAddr;
 	gpvOCPRegsLinAddr = gsSGXRegsCPUVAddr;
 #endif
@@ -333,7 +344,7 @@ PVRSRV_ERROR SysInitialise(IMG_VOID)
 #else	
 	psTimingInfo->bEnableActivePM = IMG_FALSE;
 #endif 
-	psTimingInfo->ui32ActivePowManLatencyms = SYS_SGX_ACTIVE_POWER_LATENCY_MS; 
+	psTimingInfo->ui32ActivePowManLatencyms = sgx_apm_latency;
 	psTimingInfo->ui32uKernelFreq = SYS_SGX_PDS_TIMER_FREQ; 
 #endif
 
@@ -365,8 +376,15 @@ PVRSRV_ERROR SysInitialise(IMG_VOID)
 	}
 	SYS_SPECIFIC_DATA_SET(&gsSysSpecificData, SYS_SPECIFIC_DATA_ENABLE_PM_RUNTIME);
 
-	
-
+	eError = SysDvfsInitialize(gpsSysSpecificData);
+	if (eError != PVRSRV_OK)
+	{
+		PVR_DPF((PVR_DBG_ERROR,"SysInitialise: Failed to initialize DVFS"));
+		(IMG_VOID)SysDeinitialise(gpsSysData);
+		gpsSysData = IMG_NULL;
+		return eError;
+	}
+	SYS_SPECIFIC_DATA_SET(&gsSysSpecificData, SYS_SPECIFIC_DATA_DVFS_INIT);
 
 	eError = PVRSRVRegisterDevice(gpsSysData, SGXRegisterDevice,
 								  DEVICE_SGX_INTERRUPT, &gui32SGXDeviceID);
@@ -474,8 +492,9 @@ PVRSRV_ERROR SysInitialise(IMG_VOID)
 				  (IMG_VOID **)&gpsSysData->pvSOCTimerRegisterKM,
 				  &gpsSysData->hSOCTimerRegisterOSMemHandle);
 	}
-#endif
+#endif 
 
+	//sgx_idle_init();
 	return PVRSRV_OK;
 }
 
@@ -488,7 +507,7 @@ PVRSRV_ERROR SysFinalise(IMG_VOID)
 	eError = EnableSGXClocksWrap(gpsSysData);
 	if (eError != PVRSRV_OK)
 	{
-		PVR_DPF((PVR_DBG_ERROR,"SysInitialise: Failed to Enable SGX clocks (%d)", eError));
+		PVR_DPF((PVR_DBG_ERROR,"SysFinalise: Failed to Enable SGX clocks (%d)", eError));
 		return eError;
 	}
 #endif	
@@ -511,7 +530,6 @@ PVRSRV_ERROR SysFinalise(IMG_VOID)
 	}
 	SYS_SPECIFIC_DATA_SET(&gsSysSpecificData, SYS_SPECIFIC_DATA_ENABLE_LISR);
 #endif 
-
 #if defined(__linux__)
 	
 	gpsSysData->pszVersionString = SysCreateVersionString();
@@ -540,6 +558,8 @@ PVRSRV_ERROR SysDeinitialise (SYS_DATA *psSysData)
 {
 	PVRSRV_ERROR eError;
 
+	PVR_UNREFERENCED_PARAMETER(psSysData);
+
 	if(gpsSysData->pvSOCTimerRegisterKM)
 	{
 		OSUnReservePhys(gpsSysData->pvSOCTimerRegisterKM,
@@ -548,10 +568,11 @@ PVRSRV_ERROR SysDeinitialise (SYS_DATA *psSysData)
 						gpsSysData->hSOCTimerRegisterOSMemHandle);
 	}
 
+
 #if defined(SYS_USING_INTERRUPTS)
 	if (SYS_SPECIFIC_DATA_TEST(gpsSysSpecificData, SYS_SPECIFIC_DATA_ENABLE_LISR))
 	{
-		eError = OSUninstallDeviceLISR(psSysData);
+		eError = OSUninstallDeviceLISR(gpsSysData);
 		if (eError != PVRSRV_OK)
 		{
 			PVR_DPF((PVR_DBG_ERROR,"SysDeinitialise: OSUninstallDeviceLISR failed"));
@@ -562,7 +583,7 @@ PVRSRV_ERROR SysDeinitialise (SYS_DATA *psSysData)
 
 	if (SYS_SPECIFIC_DATA_TEST(gpsSysSpecificData, SYS_SPECIFIC_DATA_ENABLE_MISR))
 	{
-		eError = OSUninstallMISR(psSysData);
+		eError = OSUninstallMISR(gpsSysData);
 		if (eError != PVRSRV_OK)
 		{
 			PVR_DPF((PVR_DBG_ERROR,"SysDeinitialise: OSUninstallMISR failed"));
@@ -588,6 +609,17 @@ PVRSRV_ERROR SysDeinitialise (SYS_DATA *psSysData)
 		if (eError != PVRSRV_OK)
 		{
 			PVR_DPF((PVR_DBG_ERROR,"SysDeinitialise: failed to de-init the device"));
+			return eError;
+		}
+	}
+
+	if (SYS_SPECIFIC_DATA_TEST(gpsSysSpecificData, SYS_SPECIFIC_DATA_DVFS_INIT))
+	{
+		eError = SysDvfsDeinitialize(gpsSysSpecificData);
+		if (eError != PVRSRV_OK)
+		{
+			PVR_DPF((PVR_DBG_ERROR,"SysDeinitialise: Failed to de-init DVFS"));
+			gpsSysData = IMG_NULL;
 			return eError;
 		}
 	}
@@ -637,11 +669,11 @@ PVRSRV_ERROR SysDeinitialise (SYS_DATA *psSysData)
 
 		gpvOCPRegsLinAddr = IMG_NULL;
 #endif
-#endif
+#endif	
 		gsSGXRegsCPUVAddr = IMG_NULL;
 		gsSGXDeviceMap.pvRegsCpuVBase = gsSGXRegsCPUVAddr;
 	}
-#endif
+#endif	
 
 	
 	gpsSysSpecificData->ui32SysSpecificData = 0;
@@ -744,7 +776,6 @@ IMG_VOID SysRemoveExternalDevice(PVRSRV_DEVICE_NODE *psDeviceNode)
 	PVR_UNREFERENCED_PARAMETER(psDeviceNode);
 }
 
-
 IMG_UINT32 SysGetInterruptSource(SYS_DATA			*psSysData,
 								 PVRSRV_DEVICE_NODE	*psDeviceNode)
 {
@@ -762,15 +793,14 @@ IMG_UINT32 SysGetInterruptSource(SYS_DATA			*psSysData,
 IMG_VOID SysClearInterrupts(SYS_DATA* psSysData, IMG_UINT32 ui32ClearBits)
 {
 	PVR_UNREFERENCED_PARAMETER(ui32ClearBits);
-#if defined(NO_HARDWARE)
 	PVR_UNREFERENCED_PARAMETER(psSysData);
-#else
+#if !defined(NO_HARDWARE)
 #if defined(SGX_OCP_NO_INT_BYPASS)
 	OSWriteHWReg(gpvOCPRegsLinAddr, EUR_CR_OCP_IRQSTATUS_2, 0x1);
 #endif
 	
 	OSReadHWReg(((PVRSRV_SGXDEV_INFO *)gpsSGXDevNode->pvDevice)->pvRegsBaseKM, EUR_CR_EVENT_HOST_CLEAR);
-#endif
+#endif	
 }
 
 #if defined(SGX_OCP_NO_INT_BYPASS)
@@ -795,7 +825,7 @@ IMG_VOID SysDisableSGXInterrupts(SYS_DATA *psSysData)
 		SYS_SPECIFIC_DATA_CLEAR(psSysSpecData, SYS_SPECIFIC_DATA_IRQ_ENABLED);
 	}
 }
-#endif
+#endif	
 
 PVRSRV_ERROR SysSystemPrePowerState(PVRSRV_SYS_POWER_STATE eNewPowerState)
 {
@@ -939,7 +969,295 @@ PVRSRV_ERROR SysDevicePostPowerState(IMG_UINT32				ui32DeviceIndex,
 	return eError;
 }
 
+#if 0
 
+enum sgx_idle_event_type {
+	SGX_NONE = 0,
+	SGX_IDLE,
+	SGX_BUSY,
+	SGX_FLIP,
+	SGX_SLOW,
+	SGX_FAST,
+	SGX_OFF,
+	SGX_ON,
+};
+
+const char *sgx_idle_event_str[] = {
+	[SGX_NONE]	= "none",
+	[SGX_IDLE]	= "  idle",
+	[SGX_BUSY]	= "  busy",
+	[SGX_FLIP]	= "flip",
+	[SGX_SLOW]	= "    slow",
+	[SGX_FAST]	= "    fast",
+	[SGX_OFF]	= "      off",
+	[SGX_ON]	= "      on",
+};
+
+struct sgx_idle_event {
+	enum sgx_idle_event_type	type;
+	ktime_t				timestamp;
+};
+
+static struct sgx_idle_event sgx_idle_log[1024 * 10];
+static int sgx_idle_log_head;
+static int sgx_idle_log_tail;
+static DEFINE_MUTEX(sgx_idle_log_lock);
+
+static void sgx_idle_log_event(enum sgx_idle_event_type type)
+{
+	if (!sgx_idle_logging)
+		return;
+
+	mutex_lock(&sgx_idle_log_lock);
+
+	sgx_idle_log[sgx_idle_log_head].type = type;
+	sgx_idle_log[sgx_idle_log_head].timestamp = ktime_get();
+
+	sgx_idle_log_head++;
+	if (sgx_idle_log_head >= ARRAY_SIZE(sgx_idle_log))
+		sgx_idle_log_head = 0;
+	if (sgx_idle_log_head == sgx_idle_log_tail) {
+		sgx_idle_log_tail++;
+		if (sgx_idle_log_tail >= ARRAY_SIZE(sgx_idle_log))
+			sgx_idle_log_tail = 0;
+	}
+
+	mutex_unlock(&sgx_idle_log_lock);
+}
+
+void sgx_idle_log_flip(void)
+{
+	sgx_idle_log_event(SGX_FLIP);
+}
+
+void sgx_idle_log_on(void)
+{
+	sgx_idle_log_event(SGX_ON);
+}
+
+void sgx_idle_log_off(void)
+{
+	sgx_idle_log_event(SGX_OFF);
+}
+
+struct sgx_idle_seq_data {
+	struct sgx_idle_event log[ARRAY_SIZE(sgx_idle_log)];
+	int size;
+	int pos;
+};
+
+static void *sgx_idle_log_seq_start(struct seq_file *s, loff_t *pos)
+{
+	struct sgx_idle_seq_data *data = s->private;
+
+	if (*pos >= data->size)
+		return NULL;
+	data->pos = *pos;
+	return data;
+}
+
+static void sgx_idle_log_seq_stop(struct seq_file *s, void *v)
+{
+}
+
+static void *sgx_idle_log_seq_next(struct seq_file *s, void *v, loff_t *pos)
+{
+	struct sgx_idle_seq_data *data = v;
+
+	data->pos = ++(*pos);
+	if (data->pos >= data->size)
+		return NULL;
+
+	return data;
+}
+
+static int sgx_idle_log_find_next(struct sgx_idle_seq_data *data, int pos,
+				  enum sgx_idle_event_type type)
+{
+	for(; pos < data->size; pos++) {
+		if (data->log[pos].type == type)
+			return pos;
+	}
+
+	return -1;
+}
+
+static int sgx_idle_log_seq_show(struct seq_file *s, void *v)
+{
+	struct sgx_idle_seq_data *data = v;
+	struct sgx_idle_event *e = &data->log[data->pos];
+	struct timespec ts = ktime_to_timespec(e->timestamp);
+	int next = -1;
+
+	seq_printf(s, "[%lu.%06lu] %s", ts.tv_sec, ts.tv_nsec / NSEC_PER_USEC,
+		   sgx_idle_event_str[e->type]);
+	if (e->type == SGX_IDLE)
+		next = sgx_idle_log_find_next(data, data->pos, SGX_BUSY);
+	else if (e->type == SGX_BUSY)
+		next = sgx_idle_log_find_next(data, data->pos, SGX_IDLE);
+
+	if (next > 0) {
+		struct sgx_idle_event *e1 = &data->log[next];
+		ktime_t diff = ktime_sub(e1->timestamp, e->timestamp);
+		ts = ktime_to_timespec(diff);
+
+		seq_printf(s, " for %lu.%06lu", ts.tv_sec,
+			   ts.tv_nsec / NSEC_PER_USEC);
+	}
+
+	seq_printf(s, "\n");
+
+	return 0;
+}
+
+static const struct seq_operations sgx_idle_log_seq_ops = {
+	.start = sgx_idle_log_seq_start,
+	.next = sgx_idle_log_seq_next,
+	.stop = sgx_idle_log_seq_stop,
+	.show = sgx_idle_log_seq_show,
+};
+
+static int sgx_idle_log_open(struct inode *inode, struct file *file)
+{
+	struct sgx_idle_seq_data *data;
+	struct seq_file *seq;
+	int ret;
+	int pos;
+
+	ret = seq_open(file, &sgx_idle_log_seq_ops);
+	if (ret < 0)
+		goto err;
+
+	data = vmalloc(sizeof(*data));
+	if (!data)
+		goto err_seq_release;
+
+	mutex_lock(&sgx_idle_log_lock);
+	data->size = 0;
+	pos = sgx_idle_log_tail;
+	while (pos != sgx_idle_log_head) {
+		data->log[data->size] = sgx_idle_log[pos];
+		data->size++;
+		pos++;
+		if (pos >= ARRAY_SIZE(sgx_idle_log))
+			pos = 0;
+	}
+	mutex_unlock(&sgx_idle_log_lock);
+
+	seq = file->private_data;
+	seq->private = data;
+
+	return 0;
+
+err_seq_release:
+	seq_release(inode, file);
+err:
+	return ret;
+}
+
+static int sgx_idle_log_release(struct inode *inode, struct file *file)
+{
+	struct seq_file *seq;
+	seq = file->private_data;
+	vfree(seq->private);
+	return seq_release(inode, file);
+}
+
+static const struct file_operations sgx_idle_log_fops = {
+	.open = sgx_idle_log_open,
+	.read = seq_read,
+	.llseek = seq_lseek,
+	.release = sgx_idle_log_release,
+};
+
+static void sgx_idle_log_init(void)
+{
+	struct dentry *d;
+
+	d = debugfs_create_file("sgx_idle", S_IRUGO, NULL,
+				NULL, &sgx_idle_log_fops);
+	if (IS_ERR_OR_NULL(d))
+		PVR_DPF((PVR_DBG_ERROR,"Failed to creat sgx_idle debug file"));
+}
+
+static ktime_t sgx_idle_last_busy;
+static struct hrtimer sgx_idle_timer;
+static struct workqueue_struct *sgx_idle_wq;
+static struct work_struct sgx_idle_work;
+
+void RequestSGXFreq(SYS_DATA *psSysData, IMG_BOOL bMaxFreq);
+
+enum hrtimer_restart sgx_idle_timer_callback(struct hrtimer *timer)
+{
+	queue_work(sgx_idle_wq, &sgx_idle_work);
+	return HRTIMER_NORESTART;
+}
+
+void sgx_idle_work_func(struct work_struct *work)
+{
+	sgx_idle_log_event(SGX_SLOW);
+	RequestSGXFreq(gpsSysData, IMG_FALSE);
+}
+
+IMG_VOID SysSGXIdleTransition(IMG_BOOL bSGXIdle)
+{
+	int ret;
+
+	if (bSGXIdle) {
+		sgx_idle_log_event(SGX_IDLE);
+		if (sgx_idle_mode != 0) {
+			uint timeout = sgx_idle_timeout;
+
+			if (sgx_idle_mode == 2) {
+				ktime_t diff;
+
+				diff = ktime_sub(ktime_get(),
+						 sgx_idle_last_busy);
+
+				if (ktime_to_ns(diff) < 2 * NSEC_PER_MSEC)
+					timeout = 3 * NSEC_PER_MSEC -
+						ktime_to_ns(diff);
+			}
+
+			hrtimer_start(&sgx_idle_timer,
+				      ktime_set(0, timeout),
+				      HRTIMER_MODE_REL);
+		}
+	} else {
+		if (sgx_idle_mode != 0) {
+			bool fast = true;
+
+			ret = hrtimer_cancel(&sgx_idle_timer);
+			if (ret)
+				fast = false;
+
+			ret = cancel_work_sync(&sgx_idle_work);
+			if (ret)
+				fast = false;
+
+			if (fast)
+				sgx_idle_log_event(SGX_FAST);
+
+			RequestSGXFreq(gpsSysData, IMG_TRUE);
+		}
+		sgx_idle_log_event(SGX_BUSY);
+		sgx_idle_last_busy = ktime_get();
+	}
+	PVR_DPF((PVR_DBG_MESSAGE, "SysSGXIdleTransition switch to %u", bSGXIdle));
+}
+
+static void sgx_idle_init(void)
+{
+	sgx_idle_log_init();
+	hrtimer_init(&sgx_idle_timer, HRTIMER_BASE_MONOTONIC,
+		     HRTIMER_MODE_REL);
+	sgx_idle_timer.function = sgx_idle_timer_callback;
+	sgx_idle_wq = alloc_ordered_workqueue("sgx_idle", WQ_HIGHPRI);
+	INIT_WORK(&sgx_idle_work, sgx_idle_work_func);
+
+	/* XXX: need a sgx_idle_deinit() */
+}
+#endif
 PVRSRV_ERROR SysOEMFunction (	IMG_UINT32	ui32ID,
 								IMG_VOID	*pvIn,
 								IMG_UINT32	ulInSize,

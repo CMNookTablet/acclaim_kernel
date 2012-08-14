@@ -70,7 +70,7 @@
 #define	PVR_DEBUG DEBUG
 #undef DEBUG
 #endif
-#include <../drivers/video/omap2/omapfb/omapfb.h>
+#include <omapfb/omapfb.h>
 #if defined(DEBUG)
 #undef DEBUG
 #endif

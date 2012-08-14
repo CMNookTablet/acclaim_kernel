@@ -852,9 +852,9 @@ static IMG_BOOL ProcessFlipV1(IMG_HANDLE hCmdCookie,
 			dsscomp_gralloc_queue(&comp, pas, true,
 					      dsscomp_proxy_cmdcomplete,
 					      (void *) psBuffer->hCmdComplete);
-		} else
+		} else {
 #endif
-		 {
+			{
 			OMAPLFBQueueBufferForSwap(psSwapChain, psBuffer);
 		}
 	}
@@ -865,7 +865,6 @@ static IMG_BOOL ProcessFlipV1(IMG_HANDLE hCmdCookie,
 }
 
 #if defined(CONFIG_DSSCOMP)
-
 #include "servicesint.h"
 #include "services.h"
 #include "mm.h"
@@ -879,6 +878,13 @@ static IMG_BOOL ProcessFlipV2(IMG_HANDLE hCmdCookie,
 {
 	struct tiler_pa_info *apsTilerPAs[5];
 	IMG_UINT32 i, k;
+	struct {
+		IMG_UINTPTR_T uiAddr;
+		IMG_UINTPTR_T uiUVAddr;
+		struct tiler_pa_info *psTilerInfo;
+	} asMemInfo[5];
+
+	memset(asMemInfo, 0, sizeof(asMemInfo));
 
 	if(uiDssDataLength != sizeof(*psDssData))
 	{
@@ -905,37 +911,23 @@ static IMG_BOOL ProcessFlipV2(IMG_HANDLE hCmdCookie,
 		psDevInfo->sPVRJTable.pfnPVRSRVDCMemInfoGetByteSize(ppsMemInfos[i], &uByteSize);
 		ui32NumPages = (uByteSize + PAGE_SIZE - 1) >> PAGE_SHIFT;
 
-		apsTilerPAs[k] = NULL;
-
 		psDevInfo->sPVRJTable.pfnPVRSRVDCMemInfoGetCpuPAddr(ppsMemInfos[i], 0, &phyAddr);
 
-		/* NV12 buffers do not need meminfos */
-		if(psDssData->ovls[k].cfg.color_mode == OMAP_DSS_COLOR_NV12)
+		/* TILER buffers do not need meminfos */
+		if(is_tiler_addr((u32)phyAddr.uiAddr))
 		{
-#if defined(SUPPORT_NV12_FROM_2_HWADDRS)
-			/* must have still 2 meminfos in array */
-			BUG_ON(i + 1 >= ui32NumMemInfos);
-			psDssData->ovls[k].ba = (u32)phyAddr.uiAddr;
-
-			i++;
-			psDevInfo->sPVRJTable.pfnPVRSRVDCMemInfoGetCpuPAddr(ppsMemInfos[i], 0, &phyAddr);
-			psDssData->ovls[k].uv = (u32)phyAddr.uiAddr;
-#else
-
-			psDssData->ovls[k].ba = (u32)phyAddr.uiAddr;
-
-			psDevInfo->sPVRJTable.pfnPVRSRVDCMemInfoGetCpuPAddr(ppsMemInfos[i], (uByteSize * 2) / 3, &phyAddr);
-			psDssData->ovls[k].uv = (u32)phyAddr.uiAddr;
-#endif 
-			continue;
-		}
-		/* check if it is a TILER buffer */
-		else if(is_tiler_addr((u32)phyAddr.uiAddr))
-		{
-			psDssData->ovls[k].ba = (u32)phyAddr.uiAddr;
+			asMemInfo[k].uiAddr = phyAddr.uiAddr;
+			if (tiler_fmt((u32)phyAddr.uiAddr) == TILFMT_8BIT) {
+				/* NV12 buffers have 2 meminfos */
+				BUG_ON(i + 1 >= ui32NumMemInfos);
+				i++;
+				psDevInfo->sPVRJTable.pfnPVRSRVDCMemInfoGetCpuPAddr(ppsMemInfos[i], 0, &phyAddr);
+				asMemInfo[k].uiUVAddr = phyAddr.uiAddr;
+			}
 			continue;
 		}
 
+		/* normal gralloc layer */
 		psTilerInfo = kzalloc(sizeof(*psTilerInfo), GFP_KERNEL);
 		if(!psTilerInfo)
 		{
@@ -951,7 +943,6 @@ static IMG_BOOL ProcessFlipV2(IMG_HANDLE hCmdCookie,
 
 		psTilerInfo->num_pg = ui32NumPages;
 		psTilerInfo->memtype = TILER_MEM_USING;
-
 		for(j = 0; j < ui32NumPages; j++)
 		{
 			psDevInfo->sPVRJTable.pfnPVRSRVDCMemInfoGetCpuPAddr(ppsMemInfos[i], j << PAGE_SHIFT, &phyAddr);
@@ -960,23 +951,37 @@ static IMG_BOOL ProcessFlipV2(IMG_HANDLE hCmdCookie,
 
 		/* need base address for in-page offset */
 		psDevInfo->sPVRJTable.pfnPVRSRVDCMemInfoGetCpuVAddr(ppsMemInfos[i], &virtAddr);
-		psDssData->ovls[k].ba = (u32)virtAddr;
-		apsTilerPAs[k] = psTilerInfo;
+		asMemInfo[k].uiAddr = (IMG_UINTPTR_T) virtAddr;
+		asMemInfo[k].psTilerInfo = psTilerInfo;
 	}
 
-	/* set up cloned layer addresses (but don't duplicate tiler_pas) */
-	for(i = k; i < psDssData->num_ovls && i < ARRAY_SIZE(apsTilerPAs); i++)
+	for(i = 0; i < psDssData->num_ovls; i++)
 	{
-		unsigned int ix = psDssData->ovls[i].ba;
-		if(ix >= ARRAY_SIZE(apsTilerPAs))
+		unsigned int ix;
+		apsTilerPAs[i] = NULL;
+
+		/* only supporting Post2, cloned and fbmem layers */
+		if (psDssData->ovls[i].addressing != OMAP_DSS_BUFADDR_LAYER_IX &&
+		    psDssData->ovls[i].addressing != OMAP_DSS_BUFADDR_OVL_IX &&
+		    psDssData->ovls[i].addressing != OMAP_DSS_BUFADDR_FB)
+			psDssData->ovls[i].cfg.enabled = false;
+
+		if (psDssData->ovls[i].addressing != OMAP_DSS_BUFADDR_LAYER_IX)
+			continue;
+
+		/* Post2 layers */
+		ix = psDssData->ovls[i].ba;
+		if (ix >= k)
 		{
-			WARN(1, "Invalid clone layer (%u); skipping all cloned layers", ix);
-			psDssData->num_ovls = k;
-			break;
+			WARN(1, "Invalid Post2 layer (%u)", ix);
+			psDssData->ovls[i].cfg.enabled = false;
+			continue;
 		}
-		apsTilerPAs[i] = apsTilerPAs[ix];
-		psDssData->ovls[i].ba = psDssData->ovls[ix].ba;
-		psDssData->ovls[i].uv = psDssData->ovls[ix].uv;
+
+		psDssData->ovls[i].addressing = OMAP_DSS_BUFADDR_DIRECT;
+		psDssData->ovls[i].ba = (u32) asMemInfo[ix].uiAddr;
+		psDssData->ovls[i].uv = (u32) asMemInfo[ix].uiUVAddr;
+		apsTilerPAs[i] = asMemInfo[ix].psTilerInfo;
 	}
 
 	dsscomp_gralloc_queue(psDssData, apsTilerPAs, false,
@@ -1172,7 +1177,7 @@ static OMAPLFB_ERROR OMAPLFBInitFBDev(OMAPLFB_DEVINFO *psDevInfo)
 			goto ErrorModPut;
 		}
 
-		psLINFBInfo->fix.smem_start = ion_phys(gpsIONClient, sAllocData.handle, &phys, &size);
+		ion_phys(gpsIONClient, sAllocData.handle, &phys, &size);
 
 		psPVRFBInfo->sSysAddr.uiAddr = phys;
 		psPVRFBInfo->sCPUVAddr = 0;
@@ -1217,7 +1222,6 @@ static OMAPLFB_ERROR OMAPLFBInitFBDev(OMAPLFB_DEVINFO *psDevInfo)
 		psPVRFBInfo->ulFBSize = FBSize;
 		psPVRFBInfo->bIs2D = OMAPLFB_FALSE;
 		psPVRFBInfo->psPageList = IMG_NULL;
-//		psPVRFBInfo->psIONHandle = IMG_NULL;
 	}
 	psPVRFBInfo->ulBufferSize = psPVRFBInfo->ulHeight * psPVRFBInfo->ulByteStride;
 	
@@ -1294,11 +1298,12 @@ static void OMAPLFBDeInitFBDev(OMAPLFB_DEVINFO *psDevInfo)
 	psLINFBOwner = psLINFBInfo->fbops->owner;
 
 	kfree(psPVRFBInfo->psPageList);
-/*	if (psPVRFBInfo->psIONHandle)
+#if defined(CONFIG_ION_OMAP)
+	if (psPVRFBInfo->psIONHandle)
 	{
 		ion_free(gpsIONClient, psPVRFBInfo->psIONHandle);
-	} */
-
+	}
+#endif
 	if (psLINFBInfo->fbops->fb_release != NULL) 
 	{
 		(void) psLINFBInfo->fbops->fb_release(psLINFBInfo, 0);

@@ -174,9 +174,7 @@ void RequestSGXFreq(SYS_DATA *psSysData, IMG_BOOL bMaxFreq)
 			psSysSpecData->ui32SGXFreqListIndex = psSysSpecData->ui32SGXFreqListSize - 1;
 		}
 	}
-
 #endif
-
 }
 
 //void sgx_idle_log_on(void);
@@ -651,7 +649,6 @@ PVRSRV_ERROR SysDvfsDeinitialize(SYS_SPECIFIC_DATA *psSysSpecificData)
 	psSysSpecificData->pui32SGXFreqList = 0;
 	psSysSpecificData->ui32SGXFreqListSize = 0;
 #endif
-
 	return PVRSRV_OK;
 }
 
