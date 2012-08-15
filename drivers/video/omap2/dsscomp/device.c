@@ -233,9 +233,13 @@ static long setup_mgr(struct dsscomp_dev *cdev,
 		u32 addr = (u32) oi->address;
 
 		/* convert addresses to user space */
-		if (oi->cfg.color_mode == OMAP_DSS_COLOR_NV12)
-			oi->uv = hwc_virt_to_phys(addr +
+		if (oi->cfg.color_mode == OMAP_DSS_COLOR_NV12) {
+			if (oi->uv_address)
+				oi->uv = hwc_virt_to_phys((u32) oi->uv_address);
+			else
+				oi->uv = hwc_virt_to_phys(addr +
 					oi->cfg.height * oi->cfg.stride);
+		}
 		oi->ba = hwc_virt_to_phys(addr);
 
 		r = r ? : dsscomp_set_ovl(comp, oi);
@@ -336,10 +340,9 @@ static long query_display(struct dsscomp_dev *cdev,
 	}
 	dis->mgr.ix = dis->ix;
 
-#pragma message "AIKES"
-	//	if (dis->modedb_len && dev->driver->get_modedb)
-	//dis->modedb_len = dev->driver->get_modedb(dev,
-	//(struct fb_videomode *) dis->modedb, dis->modedb_len);
+	if (dis->modedb_len && dev->driver->get_modedb)
+		dis->modedb_len = dev->driver->get_modedb(dev,
+			(struct fb_videomode *) dis->modedb, dis->modedb_len);
 	return 0;
 }
 
@@ -395,7 +398,6 @@ static void fill_cache(struct dsscomp_dev *cdev)
 		dev_dbg(DEV(cdev), "display%lu=%s\n", i, dssdev->driver_name);
 
 		cdev->state_notifiers[i].notifier_call = dsscomp_state_notifier;
-
 		blocking_notifier_chain_register(&dssdev->state_notifiers,
 						 cdev->state_notifiers + i);
 	}
@@ -543,7 +545,7 @@ static int dsscomp_probe(struct platform_device *pdev)
 	pr_info("dsscomp: initializing.\n");
 
 	fill_cache(cdev);
-
+	
 	/* initialize queues */
 	dsscomp_queue_init(cdev);
 	dsscomp_gralloc_init(cdev);

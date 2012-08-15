@@ -797,11 +797,11 @@ void OMAPLFBSwapHandler(OMAPLFB_BUFFER *psBuffer)
 #include <video/dsscomp.h>
 #include <plat/dsscomp.h>
 
-void sgx_idle_log_flip(void);
+//void sgx_idle_log_flip(void);
 
 static void dsscomp_proxy_cmdcomplete(void * cookie, int i)
 {
-	//	sgx_idle_log_flip();
+	//sgx_idle_log_flip();
 	/* XXX: assumes that there is only one display */
 	gapsDevInfo[0]->sPVRJTable.pfnPVRSRVCmdComplete(cookie, i);
 }
@@ -959,7 +959,8 @@ static IMG_BOOL ProcessFlipV2(IMG_HANDLE hCmdCookie,
 		/* only supporting Post2, cloned and fbmem layers */
 		if (psDssData->ovls[i].addressing != OMAP_DSS_BUFADDR_LAYER_IX &&
 		    psDssData->ovls[i].addressing != OMAP_DSS_BUFADDR_OVL_IX &&
-		    psDssData->ovls[i].addressing != OMAP_DSS_BUFADDR_FB)
+		    psDssData->ovls[i].addressing != OMAP_DSS_BUFADDR_FB &&
+		    psDssData->ovls[i].addressing != OMAP_DSS_BUFADDR_ION)
 			psDssData->ovls[i].cfg.enabled = false;
 
 		if (psDssData->ovls[i].addressing != OMAP_DSS_BUFADDR_LAYER_IX)
