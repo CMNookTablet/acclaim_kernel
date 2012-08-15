@@ -25,7 +25,6 @@
 #include <linux/slab.h>
 #include <linux/ratelimit.h>
 
-#include <video/omapdss.h>
 #include <video/dsscomp.h>
 #include <plat/dsscomp.h>
 
@@ -440,12 +439,6 @@ static u32 dsscomp_mgr_callback(void *data, int id, int status)
 	return ~status;
 }
 
-static inline bool dssdev_manually_updated(struct omap_dss_device *dev)
-{
-	return dev->caps & OMAP_DSS_DISPLAY_CAP_MANUAL_UPDATE &&
-		dev->driver->get_update_mode(dev) != OMAP_DSS_UPDATE_AUTO;
-}
-
 /* apply composition */
 /* at this point the composition is not on any queue */
 static int dsscomp_apply(dsscomp_t comp)
@@ -610,12 +603,15 @@ skip_ovl_set:
 	 */
 	if (cb_programmed && r) {
 		/* clear error if callback already registered */
-		if (omap_dss_manager_unregister_callback(mgr, &cb))
-			r = 0;
+#pragma message "AIKES"
+		//		if (omap_dss_manager_unregister_callback(mgr, &cb))
+		//			r = 0;
 	}
 	/* if failed to apply, kick out prior composition */
-	if (comp->must_apply && r)
-		mgr->blank(mgr, true);
+
+#pragma message "AIKES"
+	//	if (comp->must_apply && r)
+	//		mgr->blank(mgr, true);
 
 	if (!r && (d->mode & DSSCOMP_SETUP_MODE_DISPLAY)) {
 		/* cannot handle update errors, so ignore them */
@@ -645,7 +641,9 @@ int dsscomp_state_notifier(struct notifier_block *nb,
 	if (mgr) {
 		mutex_lock(&mtx);
 		if (state == OMAP_DSS_DISPLAY_DISABLED) {
-			mgr->blank(mgr, true);
+#pragma message "AIKES"
+
+			//			mgr->blank(mgr, true);
 			mgrq[mgr->id].blanking = true;
 		} else if (state == OMAP_DSS_DISPLAY_ACTIVE) {
 			mgrq[mgr->id].blanking = false;
@@ -761,7 +759,8 @@ void dsscomp_dbg_comps(struct seq_file *s)
 		}
 
 		/* print manager cache */
-		mgr->dump_cb(mgr, s);
+#pragma message "AIKES"
+		//		mgr->dump_cb(mgr, s);
 	}
 	mutex_unlock(&dbg_mtx);
 #endif

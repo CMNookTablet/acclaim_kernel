@@ -342,7 +342,7 @@ static void assign_colormode_to_var(struct fb_var_screeninfo *var,
 	var->transp = color->transp;
 }
 
-static int fb_mode_to_dss_mode(struct fb_var_screeninfo *var,
+int fb_mode_to_dss_mode(struct fb_var_screeninfo *var,
 		enum omap_color_mode *mode)
 {
 	enum omap_color_mode dssmode;
@@ -414,6 +414,7 @@ static int fb_mode_to_dss_mode(struct fb_var_screeninfo *var,
 
 	return -EINVAL;
 }
+EXPORT_SYMBOL(fb_mode_to_dss_mode);
 
 static int check_fb_res_bounds(struct fb_var_screeninfo *var)
 {

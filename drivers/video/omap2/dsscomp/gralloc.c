@@ -1,3 +1,4 @@
+#include <linux/fb.h>
 #include <linux/kernel.h>
 #include <linux/slab.h>
 #include <linux/sched.h>

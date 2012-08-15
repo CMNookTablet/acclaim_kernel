@@ -1135,6 +1135,30 @@ static int dss_driver_probe(struct device *dev)
 	return 0;
 }
 
+static void omap_dss_driver_disable(struct omap_dss_device *dssdev)
+{
+	if (dssdev->state != OMAP_DSS_DISPLAY_DISABLED)
+		blocking_notifier_call_chain(&dssdev->state_notifiers,
+					OMAP_DSS_DISPLAY_DISABLED, dssdev);
+	dssdev->driver->disable_orig(dssdev);
+}
+
+static int omap_dss_driver_enable(struct omap_dss_device *dssdev)
+{
+	int r;
+	r = dssdev->driver->enable_orig(dssdev);
+	if (!r && dssdev->state == OMAP_DSS_DISPLAY_ACTIVE)
+		blocking_notifier_call_chain(&dssdev->state_notifiers,
+					OMAP_DSS_DISPLAY_ACTIVE, dssdev);
+	return r;
+}
+
+static int omap_dss_driver_suspend(struct omap_dss_device *dssdev)
+{
+	int r = dssdev->driver->suspend_orig(dssdev);
+	return r;
+}
+
 static int dss_driver_remove(struct device *dev)
 {
 	struct omap_dss_driver *dssdrv = to_dss_driver(dev->driver);
@@ -1163,6 +1187,14 @@ int omap_dss_register_driver(struct omap_dss_driver *dssdriver)
 	if (dssdriver->get_recommended_bpp == NULL)
 		dssdriver->get_recommended_bpp =
 			omapdss_default_get_recommended_bpp;
+
+	dssdriver->disable_orig = dssdriver->disable;
+	dssdriver->disable = omap_dss_driver_disable;
+	dssdriver->enable_orig = dssdriver->enable;
+	dssdriver->enable = omap_dss_driver_enable;
+
+	dssdriver->suspend_orig = dssdriver->suspend;
+	dssdriver->suspend = omap_dss_driver_suspend;
 
 	return driver_register(&dssdriver->driver);
 }

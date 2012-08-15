@@ -37,7 +37,6 @@
 
 #define MODULE_NAME	"dsscomp"
 
-#include <video/omapdss.h>
 #include <video/dsscomp.h>
 #include <plat/dsscomp.h>
 #include "dsscomp.h"
@@ -337,9 +336,10 @@ static long query_display(struct dsscomp_dev *cdev,
 	}
 	dis->mgr.ix = dis->ix;
 
-	if (dis->modedb_len && dev->driver->get_modedb)
-		dis->modedb_len = dev->driver->get_modedb(dev,
-			(struct fb_videomode *) dis->modedb, dis->modedb_len);
+#pragma message "AIKES"
+	//	if (dis->modedb_len && dev->driver->get_modedb)
+	//dis->modedb_len = dev->driver->get_modedb(dev,
+	//(struct fb_videomode *) dis->modedb, dis->modedb_len);
 	return 0;
 }
 
@@ -361,12 +361,11 @@ static long setup_display(struct dsscomp_dev *cdev,
 	dev = cdev->displays[dis->ix];
 	if (!dev)
 		return -EINVAL;
-
-	if (dev->driver->set_mode)
-		return dev->driver->set_mode(dev,
-					(struct fb_videomode *) &dis->mode);
-	else
-		return 0;
+		if (dev->driver->set_mode)
+			return dev->driver->set_mode(dev,
+						     (struct fb_videomode *) &dis->mode);
+		else
+			return 0;
 }
 
 static void fill_cache(struct dsscomp_dev *cdev)
@@ -396,8 +395,9 @@ static void fill_cache(struct dsscomp_dev *cdev)
 		dev_dbg(DEV(cdev), "display%lu=%s\n", i, dssdev->driver_name);
 
 		cdev->state_notifiers[i].notifier_call = dsscomp_state_notifier;
+
 		blocking_notifier_chain_register(&dssdev->state_notifiers,
-						cdev->state_notifiers + i);
+						 cdev->state_notifiers + i);
 	}
 	dev_info(DEV(cdev), "found %d displays and %d overlays\n",
 				cdev->num_displays, cdev->num_ovls);

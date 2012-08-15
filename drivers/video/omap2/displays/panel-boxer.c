@@ -101,8 +101,8 @@ static void boxer_get_timings(struct omap_dss_device *dssdev,
 static void boxer_get_dimension(struct omap_dss_device *dssdev,
 		u32 *width, u32 *height)
 {
-	*width = dssdev->panel.width_in_mm;
-	*height = dssdev->panel.height_in_mm;
+	*width = DIV_ROUND_CLOSEST(dssdev->panel.width_in_um, 1000);
+	*height = DIV_ROUND_CLOSEST(dssdev->panel.height_in_um, 1000);
 }
 
 static int boxer_panel_probe(struct omap_dss_device *dssdev)
@@ -123,8 +123,8 @@ static int boxer_panel_probe(struct omap_dss_device *dssdev)
 	 * further changed internally if needed*/
 	panel_config = &panel_configs[0];
 
-	dssdev->panel.width_in_mm = panel_config->width_in_mm;
-	dssdev->panel.height_in_mm = panel_config->height_in_mm;
+	dssdev->panel.width_in_um = panel_config->width_in_mm * 1000;
+	dssdev->panel.height_in_um = panel_config->height_in_mm * 1000;
 
 	printk(KERN_INFO " boxer : %s called , line %d\n", __FUNCTION__ , __LINE__);
 	dssdev->panel.config	= OMAP_DSS_LCD_TFT | OMAP_DSS_LCD_IVS |

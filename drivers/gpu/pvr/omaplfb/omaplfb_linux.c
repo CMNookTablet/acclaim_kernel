@@ -250,6 +250,9 @@ void OMAPLFBDestroySwapQueue(OMAPLFB_SWAPCHAIN *psSwapChain)
 #include <linux/omapfb.h>
 #endif
 
+extern int fb_mode_to_dss_mode(struct fb_var_screeninfo *var,
+			       enum omap_color_mode *mode);
+
 void OMAPLFBFlip(OMAPLFB_DEVINFO *psDevInfo, OMAPLFB_BUFFER *psBuffer)
 {
 	struct fb_var_screeninfo sFBVar;
@@ -300,7 +303,7 @@ void OMAPLFBFlip(OMAPLFB_DEVINFO *psDevInfo, OMAPLFB_BUFFER *psBuffer)
 		struct tiler_pa_info *pas[] = { NULL };
 
 		d.ovls[0].ba = sFBFix.smem_start;
-		omapfb_mode_to_dss_mode(&sFBVar, &d.ovls[0].cfg.color_mode);
+		fb_mode_to_dss_mode(&sFBVar, &d.ovls[0].cfg.color_mode);
 
 		res = dsscomp_gralloc_queue(&d, pas, true, NULL, NULL);
 	}

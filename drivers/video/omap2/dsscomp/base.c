@@ -24,7 +24,6 @@
 #include <linux/notifier.h>
 #include <mach/tiler.h>
 
-#include <video/omapdss.h>
 #include <video/dsscomp.h>
 #include <plat/dsscomp.h>
 

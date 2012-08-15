@@ -2,7 +2,7 @@
 #define _LINUX_DSSCOMP_H
 
 #ifdef __KERNEL__
-#include <video/omapdss.h>
+#include <plat/display.h>
 #else
 
 /* exporting enumerations from arch/arm/plat-omap/include/plat/display.h */
@@ -123,64 +123,6 @@ struct dsscomp_videomode {
 	__u32 sync;
 	__u32 vmode;
 	__u32 flag;
-};
-
-/*
- * Stereoscopic Panel types
- * row, column, overunder, sidebyside options
- * are with respect to native scan order
- */
-enum s3d_disp_type {
-	S3D_DISP_NONE = 0,
-	S3D_DISP_FRAME_SEQ,
-	S3D_DISP_ROW_IL,
-	S3D_DISP_COL_IL,
-	S3D_DISP_PIX_IL,
-	S3D_DISP_CHECKB,
-	S3D_DISP_OVERUNDER,
-	S3D_DISP_SIDEBYSIDE,
-};
-
-/* Subsampling direction is based on native panel scan order.*/
-enum s3d_disp_sub_sampling {
-	S3D_DISP_SUB_SAMPLE_NONE = 0,
-	S3D_DISP_SUB_SAMPLE_V,
-	S3D_DISP_SUB_SAMPLE_H,
-};
-
-/*
- * Indicates if display expects left view first followed by right or viceversa
- * For row interlaved displays, defines first row view
- * For column interleaved displays, defines first column view
- * For checkerboard, defines first pixel view
- * For overunder, defines top view
- * For sidebyside, defines west view
- */
-enum s3d_disp_order {
-	S3D_DISP_ORDER_L = 0,
-	S3D_DISP_ORDER_R = 1,
-};
-
-/*
- * Indicates current view
- * Used mainly for displays that need to trigger a sync signal
- */
-enum s3d_disp_view {
-	S3D_DISP_VIEW_L = 0,
-	S3D_DISP_VIEW_R,
-};
-
-struct s3d_disp_info {
-	enum s3d_disp_type type;
-	enum s3d_disp_sub_sampling sub_samp;
-	enum s3d_disp_order order;
-	/*
-	 * Gap between left and right views
-	 * For over/under units are lines
-	 * For sidebyside units are pixels
-	 * For other types ignored
-	 */
-	unsigned int gap;
 };
 
 enum omap_dss_ilace_mode {

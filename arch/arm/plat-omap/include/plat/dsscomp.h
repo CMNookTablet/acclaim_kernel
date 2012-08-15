@@ -1,8 +1,6 @@
 #ifndef _ARCH_ARM_PLAT_OMAP_DSSCOMP_H
 #define _ARCH_ARM_PLAT_OMAP_DSSCOMP_H
 
-#include <video/omapdss.h>
-
 /* queuing operations */
 typedef struct dsscomp_data *dsscomp_t;		/* handle */
 

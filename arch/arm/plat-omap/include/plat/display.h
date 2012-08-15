@@ -20,6 +20,7 @@
 #ifndef __ASM_ARCH_OMAP_DISPLAY_H
 #define __ASM_ARCH_OMAP_DISPLAY_H
 
+#include <linux/fb.h>
 #include <linux/list.h>
 #include <linux/kobject.h>
 #include <linux/device.h>
@@ -83,24 +84,27 @@ enum omap_channel {
 };
 
 enum omap_color_mode {
-	OMAP_DSS_COLOR_CLUT1		= 1 << 0,  /* BITMAP 1 */
-	OMAP_DSS_COLOR_CLUT2		= 1 << 1,  /* BITMAP 2 */
-	OMAP_DSS_COLOR_CLUT4		= 1 << 2,  /* BITMAP 4 */
-	OMAP_DSS_COLOR_CLUT8		= 1 << 3,  /* BITMAP 8 */
-	OMAP_DSS_COLOR_RGB12U		= 1 << 4,  /* RGB12, 16-bit container */
-	OMAP_DSS_COLOR_ARGB16		= 1 << 5,  /* ARGB16 */
-	OMAP_DSS_COLOR_RGB16		= 1 << 6,  /* RGB16 */
-	OMAP_DSS_COLOR_RGB24U		= 1 << 7,  /* RGB24, 32-bit container */
-	OMAP_DSS_COLOR_RGB24P		= 1 << 8,  /* RGB24, 24-bit container */
-	OMAP_DSS_COLOR_YUV2		= 1 << 9,  /* YUV2 4:2:2 co-sited */
-	OMAP_DSS_COLOR_UYVY		= 1 << 10, /* UYVY 4:2:2 co-sited */
-	OMAP_DSS_COLOR_ARGB32		= 1 << 11, /* ARGB32 */
-	OMAP_DSS_COLOR_RGBA32		= 1 << 12, /* RGBA32 */
-	OMAP_DSS_COLOR_RGBX32		= 1 << 13, /* RGBx32 */
+	OMAP_DSS_COLOR_CLUT1	= 1 << 0,  /* BITMAP 1 */
+	OMAP_DSS_COLOR_CLUT2	= 1 << 1,  /* BITMAP 2 */
+	OMAP_DSS_COLOR_CLUT4	= 1 << 2,  /* BITMAP 4 */
+	OMAP_DSS_COLOR_CLUT8	= 1 << 3,  /* BITMAP 8 */
+	OMAP_DSS_COLOR_RGB12U	= 1 << 4,  /* RGB12, 16-bit container */
+	OMAP_DSS_COLOR_ARGB16	= 1 << 5,  /* ARGB16 */
+	OMAP_DSS_COLOR_RGB16	= 1 << 6,  /* RGB16 */
+	OMAP_DSS_COLOR_RGB24U	= 1 << 7,  /* RGB24, 32-bit container */
+	OMAP_DSS_COLOR_RGB24P	= 1 << 8,  /* RGB24, 24-bit container */
+	OMAP_DSS_COLOR_YUV2	= 1 << 9,  /* YUV2 4:2:2 co-sited */
+	OMAP_DSS_COLOR_UYVY	= 1 << 10, /* UYVY 4:2:2 co-sited */
+	OMAP_DSS_COLOR_ARGB32	= 1 << 11, /* ARGB32 */
+	OMAP_DSS_COLOR_RGBA32	= 1 << 12, /* RGBA32 */
+	OMAP_DSS_COLOR_RGBX32	= 1 << 13, /* RGBx32 */
 	OMAP_DSS_COLOR_NV12		= 1 << 14, /* NV12 format: YUV 4:2:0 */
+	OMAP_DSS_COLOR_RGBA16		= 1 << 15, /* RGBA16 - 4444 */
+	OMAP_DSS_COLOR_RGBX16		= 1 << 16, /* RGBx16 - 4444 */
+	OMAP_DSS_COLOR_ARGB16_1555	= 1 << 17, /* ARGB16 - 1555 */
+	OMAP_DSS_COLOR_XRGB16_1555	= 1 << 18, /* xRGB16 - 1555 */
 	OMAP_DSS_COLOR_RGBA12		= 1 << 15, /* RGBA12 - 4444 */
 	OMAP_DSS_COLOR_XRGB12		= 1 << 16, /* xRGB12, 16-bit cont. */
-	OMAP_DSS_COLOR_ARGB16_1555	= 1 << 17, /* ARGB16-1555 */
 	OMAP_DSS_COLOR_RGBX24_32_ALGN   = 1 << 18, /* 32-msb aligned 24bit */
 	OMAP_DSS_COLOR_XRGB15		= 1 << 19, /* xRGB15: 1555*/
 
@@ -463,11 +467,40 @@ extern const struct omap_video_timings omap_dss_pal_timings;
 extern const struct omap_video_timings omap_dss_ntsc_timings;
 #endif
 
+enum omapdss_completion_status {
+	DSS_COMPLETION_PROGRAMMED	= (1 << 1),
+	DSS_COMPLETION_DISPLAYED	= (1 << 2),
+
+	DSS_COMPLETION_CHANGED_SET	= (1 << 3),
+	DSS_COMPLETION_CHANGED_CACHE	= (1 << 4),
+	DSS_COMPLETION_CHANGED		= (3 << 3),
+
+	DSS_COMPLETION_RELEASED		= (15 << 5),
+	DSS_COMPLETION_ECLIPSED_SET	= (1 << 5),
+	DSS_COMPLETION_ECLIPSED_CACHE	= (1 << 6),
+	DSS_COMPLETION_ECLIPSED_SHADOW	= (1 << 7),
+	DSS_COMPLETION_TORN		= (1 << 8),
+};
+
+struct omapdss_ovl_cb {
+       /* optional callback method */
+       u32 (*fn)(void *data, int id, int status);
+       void *data;
+       u32 mask;
+};
+
 struct omap_dss_cpr_coefs {
 	s16 rr, rg, rb;
 	s16 gr, gg, gb;
 	s16 br, bg, bb;
 };
+
+struct omap_dss_cconv_coefs {
+       s16 ry, rcr, rcb;
+       s16 gy, gcr, gcb;
+       s16 by, bcr, bcb;
+       u16 full_range;
+} __attribute__ ((aligned(4)));
 
 struct omap_overlay_info {
 	bool enabled;
@@ -489,6 +522,7 @@ struct omap_overlay_info {
 	u16 out_height;	/* if 0, out_height == height */
 	u8 global_alpha;
 	u16 min_x_decim, max_x_decim, min_y_decim, max_y_decim;
+	struct omap_dss_cconv_coefs cconv;
 	enum omap_overlay_zorder zorder;
 	u32 p_uv_addr;	/* for NV12 format */
 	enum device_n_buffer_type field;
@@ -541,6 +575,8 @@ struct omap_overlay_manager_info {
 
 	bool alpha_enabled;
 	u8 gamma;
+
+	struct omapdss_ovl_cb cb;
 
 	bool cpr_enable;
 	struct omap_dss_cpr_coefs cpr_coefs;
@@ -698,8 +734,8 @@ struct omap_dss_device {
 
 		enum omap_panel_config config;
 		struct s3d_disp_info s3d_info;
-		u32 width_in_mm;
-		u32 height_in_mm;
+		u32 width_in_um;
+		u32 height_in_um;
 	} panel;
 
 	struct {
@@ -727,6 +763,7 @@ struct omap_dss_device {
 	struct omap_writeback *wb_manager;
 
 	enum omap_dss_display_state state;
+	struct blocking_notifier_head state_notifiers;
 	enum omap_channel channel;
 
 	struct blocking_notifier_head notifier;
@@ -797,7 +834,8 @@ struct omap_dss_driver {
 
 	int (*set_wss)(struct omap_dss_device *dssdev, u32 wss);
 	u32 (*get_wss)(struct omap_dss_device *dssdev);
-
+	int (*set_mode)(struct omap_dss_device *dssdev,
+			struct fb_videomode *mode);
 	void (*enable_device_detect)(struct omap_dss_device *dssdev, u8 enable);
 	bool (*get_device_detect)(struct omap_dss_device *dssdev);
 	int (*get_device_connected)(struct omap_dss_device *dssdev);
@@ -830,6 +868,10 @@ struct omap_dss_driver {
 	 *hence we add capability to choose the most optimal one given a source
 	 *Returns non-zero if the type was not supported*/
 	int (*set_s3d_disp_type)(struct omap_dss_device *dssdev, struct s3d_disp_info *info);
+	/* for wrapping around state changes */
+	void (*disable_orig)(struct omap_dss_device *display);
+	int (*enable_orig)(struct omap_dss_device *display);
+	int (*suspend_orig)(struct omap_dss_device *display);
 };
 
 struct pico_platform_data {
