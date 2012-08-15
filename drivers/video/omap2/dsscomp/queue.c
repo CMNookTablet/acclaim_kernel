@@ -609,9 +609,8 @@ skip_ovl_set:
 	}
 	/* if failed to apply, kick out prior composition */
 
-#pragma message "AIKES"
-	//	if (comp->must_apply && r)
-	//		mgr->blank(mgr, true);
+	if (comp->must_apply && r)
+		mgr->blank(mgr, true);
 
 	if (!r && (d->mode & DSSCOMP_SETUP_MODE_DISPLAY)) {
 		/* cannot handle update errors, so ignore them */

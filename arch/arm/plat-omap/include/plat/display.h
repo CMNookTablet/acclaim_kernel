@@ -534,6 +534,7 @@ struct omap_overlay_info {
 	u16 pic_height;	/* required for interlacing with cropping */
 	bool out_wb; /* true when this overlay only feeds wb pipeline */
 	bool pre_mult_alpha;
+	struct omapdss_ovl_cb cb;
 };
 
 struct omap_overlay {
@@ -619,6 +620,7 @@ struct omap_overlay_manager {
 	int (*apply)(struct omap_overlay_manager *mgr);
 	int (*wait_for_go)(struct omap_overlay_manager *mgr);
 	int (*wait_for_vsync)(struct omap_overlay_manager *mgr);
+	int (*blank)(struct omap_overlay_manager *mgr, bool wait_for_vsync);
 	void (*dump_cb)(struct omap_overlay_manager *mgr, struct seq_file *s);
 	int (*enable)(struct omap_overlay_manager *mgr);
 	int (*disable)(struct omap_overlay_manager *mgr);
@@ -997,6 +999,7 @@ int omap_dss_manager_unregister_callback(struct omap_overlay_manager *mgr,
 /* generic callback handling */
 static inline void dss_ovl_cb(struct omapdss_ovl_cb *cb, int id, int status)
 {
+	printk ("dss_ovl_cb: %d\n fn: %p mask: %d", status, cb->fn, cb->mask);
 	printk ("dss_ovl_cb: %d\n", status);
 	if (cb->fn && (cb->mask & status)) {
 		printk ("dss_ovl_cb fn set and mask updated from: %d\n",

@@ -41,10 +41,10 @@ static struct omap_video_timings boxer_panel_timings = {
 	.pixel_clock    = 46000, /* in kHz */
 	.hfp            = 160,
 	.hsw            = 10,
-	.hbp            = 160,
-	.vfp            = 10,
-	.vsw            = 2,
-	.vbp            = 23,
+	.hbp            = 150,
+	.vfp            = 12,
+	.vsw            = 3,
+	.vbp            = 20,
 };
 
 struct panel_config {
@@ -54,8 +54,8 @@ struct panel_config {
 
 static struct panel_config panel_configs[] = {
 	{
-		.width_in_mm = 153,
-		.height_in_mm = 90,
+		.width_in_mm = 158,
+		.height_in_mm = 92,
 	}
 };
 
@@ -285,20 +285,6 @@ static int boxer_panel_reset(struct omap_dss_device *dssdev, enum omap_dss_reset
 	return ret;
 }
 
-static int boxer_set_update_mode(struct omap_dss_device *dssdev,
-				 enum omap_dss_update_mode mode)
-{
-	if (mode != OMAP_DSS_UPDATE_MANUAL)
-			return -EINVAL;
-	return 0;
-}
-
-static enum omap_dss_update_mode 
-boxer_get_update_mode(struct omap_dss_device *dssdev)
-{
-	return OMAP_DSS_UPDATE_MANUAL;
-}
-
 static struct omap_dss_driver boxer_driver = {
 	.probe		= boxer_panel_probe,
 	.remove		= boxer_panel_remove,
@@ -310,8 +296,6 @@ static struct omap_dss_driver boxer_driver = {
 	.set_timings    = dpi_set_timings,
 	.check_timings  = dpi_check_timings,
 	.get_dimension  = boxer_get_dimension,
-	.set_update_mode = boxer_set_update_mode,
-	.get_update_mode = boxer_get_update_mode,
 	.reset			= boxer_panel_reset,
 	.driver		= {
 		.name	= "boxer_panel_drv",
