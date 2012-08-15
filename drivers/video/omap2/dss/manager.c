@@ -28,16 +28,18 @@
 #include <linux/platform_device.h>
 #include <linux/spinlock.h>
 #include <linux/jiffies.h>
+#include <linux/seq_file.h>
 
 #include <plat/display.h>
 #include <plat/cpu.h>
 
 #include "dss.h"
 
-#define MAX_DSS_MANAGERS (cpu_is_omap44xx() ? 3 : 2)
+#define MAX_DSS_MANAGERS 3
 
 static int num_managers;
 static struct list_head manager_list;
+static struct omap_overlay_manager *mgrs[MAX_DSS_MANAGERS];
 
 static ssize_t manager_name_show(struct omap_overlay_manager *mgr, char *buf)
 {
@@ -500,6 +502,20 @@ static struct kobj_type manager_ktype = {
 	.default_attrs = manager_sysfs_attrs,
 };
 
+struct callback_states {
+	/*
+	 * Keep track of callbacks at the last 3 levels of pipeline:
+	 * cache, shadow registers and in DISPC registers.
+	 *
+	 * Note: We zero the function pointer when moving from one level to
+	 * another to avoid checking for dirty and shadow_dirty fields that
+	 * are not common between overlay and manager cache structures.
+	 */
+	struct omapdss_ovl_cb cache, shadow, dispc;
+	bool dispc_displayed;
+	bool shadow_enabled;
+};
+
 /*
  * We have 4 levels of cache for the dispc settings. First two are in SW and
  * the latter two in HW.
@@ -549,7 +565,9 @@ struct overlay_cache_data {
 	u32 fifo_high;
 
 	bool manual_update;
-	bool pre_mult_alpha;
+	bool pre_mult_alpha;	
+	struct callback_states cb; /* callback data for the last 3 states */
+	int dispc_channel; /* overlay's channel in DISPC */
 };
 
 struct manager_cache_data {
@@ -573,6 +591,7 @@ struct manager_cache_data {
 	/* enlarge the update area if the update area contains scaled
 	 * overlays */
 	bool enlarge_update_area;
+	struct callback_states cb; /* callback data for the last 3 states */
 };
 
 static struct {
@@ -582,9 +601,43 @@ static struct {
 	struct writeback_cache_data writeback_cache;
 
 	bool irq_enabled;
+	u32 comp_irq_enabled;
 } dss_cache;
 
+/* propagating callback info between states */
+static inline void
+dss_ovl_configure_cb(struct callback_states *st, int i, bool enabled)
+{
+	/* complete info in shadow */
+	dss_ovl_cb(&st->shadow, i, DSS_COMPLETION_ECLIPSED_SHADOW);
 
+	/* propagate cache to shadow */
+	st->shadow = st->cache;
+	st->shadow_enabled = enabled;
+	st->cache.fn = NULL;	/* info traveled to shadow */
+}
+
+static inline void
+dss_ovl_program_cb(struct callback_states *st, int i)
+{
+	/* mark previous programming as completed */
+	dss_ovl_cb(&st->dispc, i, st->dispc_displayed ?
+				DSS_COMPLETION_RELEASED : DSS_COMPLETION_TORN);
+
+	/* mark shadow info as programmed, not yet displayed */
+	dss_ovl_cb(&st->shadow, i, DSS_COMPLETION_PROGRAMMED);
+
+	/* if overlay/manager is not enabled, we are done now */
+	if (!st->shadow_enabled) {
+		dss_ovl_cb(&st->shadow, i, DSS_COMPLETION_RELEASED);
+		st->shadow.fn = NULL;
+	}
+
+	/* propagate shadow to dispc */
+	st->dispc = st->shadow;
+	st->shadow.fn = NULL;
+	st->dispc_displayed = false;
+}
 
 static int omap_dss_set_device(struct omap_overlay_manager *mgr,
 		struct omap_dss_device *dssdev)
@@ -618,6 +671,12 @@ static int omap_dss_set_device(struct omap_overlay_manager *mgr,
 	dssdev->manager = mgr;
 	mgr->device = dssdev;
 	mgr->device_changed = true;
+
+	if (dssdev->type == OMAP_DISPLAY_TYPE_DSI &&
+	    !(dssdev->caps & OMAP_DSS_DISPLAY_CAP_MANUAL_UPDATE))
+		omap_dispc_set_irq_type(mgr->id, OMAP_DISPC_IRQ_TYPE_VSYNC);
+	else
+		omap_dispc_set_irq_type(mgr->id, OMAP_DISPC_IRQ_TYPE_FRAMEDONE);
 
 	return 0;
 }
@@ -1079,7 +1138,7 @@ static int configure_dispc(void)
 	struct writeback_cache_data *wb = NULL;
 	const int num_ovls = ARRAY_SIZE(dss_cache.overlay_cache);
 	const int num_mgrs = MAX_DSS_MANAGERS;
-	int i;
+	int used_ovls, i, j;
 	int r;
 	bool mgr_busy[MAX_DSS_MANAGERS];
 	bool mgr_go[MAX_DSS_MANAGERS];
@@ -1117,6 +1176,8 @@ static int configure_dispc(void)
 		if (r)
 			DSSERR("configure_overlay %d failed\n", i);
 
+		dss_ovl_configure_cb(&oc->cb, i, oc->enabled);
+
 		oc->dirty = false;
 		oc->shadow_dirty = true;
 		if (!cpu_is_omap44xx())
@@ -1141,14 +1202,23 @@ static int configure_dispc(void)
 			continue;
 		}
 
+		for (j = used_ovls = 0; j < num_ovls; j++) {
+			oc = &dss_cache.overlay_cache[j];
+			if (oc->channel == i && oc->enabled)
+				used_ovls++;
+		}
+
 		configure_manager(i);
+
+		dss_ovl_configure_cb(&mc->cb, i, used_ovls);
+
 		mc->dirty = false;
 		mc->shadow_dirty = true;
 		mgr_go[i] = true;
 	}
 	if (cpu_is_omap44xx()) {
 		/* Enable WB plane and source plane */
-		DSSDBG("configure manager wb->shadow_dirty = %d", wb->shadow_dirty);
+		DSSDBG("configure manager wb->shadow_dirty = %d\n", wb->shadow_dirty);
 		if (wb->shadow_dirty && wb->enabled) {
 			switch (wb->source) {
 			case OMAP_WB_OVERLAY0:
@@ -1359,6 +1429,103 @@ void dss_setup_partial_planes(struct omap_dss_device *dssdev,
 	*wi = w;
 	*hi = h;
 }
+static void schedule_completion_irq(void);
+
+static void dss_completion_irq_handler(void *data, u32 mask)
+{
+	struct manager_cache_data *mc;
+	struct overlay_cache_data *oc;
+	const int num_ovls = ARRAY_SIZE(dss_cache.overlay_cache);
+	const int num_mgrs = MAX_DSS_MANAGERS;
+	const u32 masks[] = {
+		DISPC_IRQ_FRAMEDONE | DISPC_IRQ_VSYNC,
+		DISPC_IRQ_FRAMEDONE2 | DISPC_IRQ_VSYNC2,
+		DISPC_IRQ_EVSYNC_EVEN |	DISPC_IRQ_EVSYNC_ODD
+	};
+	int i;
+
+	printk ("dss-manager.c: dss_completion_irq_handler\n");
+
+	spin_lock(&dss_cache.lock);
+
+	for (i = 0; i < num_mgrs; i++) {
+		mc = &dss_cache.manager_cache[i];
+		if (mask & masks[i]) {
+			if (mgrs[i] && mgrs[i]->device)
+				mgrs[i]->device->first_vsync = true;
+			dss_ovl_cb(&mc->cb.dispc, i, DSS_COMPLETION_DISPLAYED);
+			mc->cb.dispc_displayed = true;
+		}
+	}
+
+	/* notify all overlays on that manager */
+	for (i = 0; i < num_ovls; i++) {
+		oc = &dss_cache.overlay_cache[i];
+		if (mask & masks[oc->channel]) {
+			dss_ovl_cb(&oc->cb.dispc, i, DSS_COMPLETION_DISPLAYED);
+			oc->cb.dispc_displayed = true;
+		}
+	}
+
+	schedule_completion_irq();
+
+	spin_unlock(&dss_cache.lock);
+}
+
+static void schedule_completion_irq(void)
+{
+	struct manager_cache_data *mc;
+	struct overlay_cache_data *oc;
+	const int num_ovls = ARRAY_SIZE(dss_cache.overlay_cache);
+	const int num_mgrs = MAX_DSS_MANAGERS;
+	const u32 masks[] = {
+		DISPC_IRQ_FRAMEDONE | DISPC_IRQ_VSYNC,
+		DISPC_IRQ_FRAMEDONE2 | DISPC_IRQ_VSYNC2,
+		DISPC_IRQ_EVSYNC_EVEN |	DISPC_IRQ_EVSYNC_ODD
+	};
+	u32 mask = 0;
+	int i;
+
+	printk ("dss-manager.c: schedule_completion_irq\n");
+	for (i = 0; i < num_mgrs; i++) {
+		printk ("dss-manager.c: num_mgrs %d\n", i);
+		mc = &dss_cache.manager_cache[i];
+		printk ("dss-manager.c: schedule_completion_irq: fn: %p mask: %d\n", mc->cb.dispc.fn, mc->cb.dispc.mask);
+		if (mc->cb.dispc.fn &&
+				(mc->cb.dispc.mask & DSS_COMPLETION_DISPLAYED))
+			mask |= masks[i];
+	}
+
+	/* notify all overlays on that manager */
+	for (i = 0; i < num_ovls; i++) {
+		printk ("dss-manager.c: schedule_completion_irq num_ovls: %d\n",
+			i);
+		oc = &dss_cache.overlay_cache[i];
+		printk ("dss-manager.c: schedule_completion_irq: "
+			"fn: %p en: %d mask: %d\n", 
+			oc->cb.dispc.fn, oc->enabled, mc->cb.dispc.mask);
+		if (oc->cb.dispc.fn && oc->enabled &&
+				(oc->cb.dispc.mask & DSS_COMPLETION_DISPLAYED))
+			mask |= masks[oc->channel];
+	}
+
+	printk ("dss-manager.c: schedule_completion_irq %u %u\n",
+		mask, dss_cache.comp_irq_enabled);
+	if (mask != dss_cache.comp_irq_enabled) {
+		if (dss_cache.comp_irq_enabled)	{
+			printk ("omap_dispc_unregister_isr\n");
+			omap_dispc_unregister_isr(dss_completion_irq_handler,
+						  NULL, 
+						  dss_cache.comp_irq_enabled);
+		}
+		if (mask) {			
+			printk ("omap_dispc_register_isr\n");
+			omap_dispc_register_isr(dss_completion_irq_handler,
+						NULL, mask);
+		}
+		dss_cache.comp_irq_enabled = mask;
+	}
+}
 
 void dss_start_update(struct omap_dss_device *dssdev)
 {
@@ -1368,14 +1535,20 @@ void dss_start_update(struct omap_dss_device *dssdev)
 	const int num_mgrs = MAX_DSS_MANAGERS;
 	struct omap_overlay_manager *mgr;
 	int i;
-
+	unsigned long flags;
 	mgr = dssdev->manager;
-
+	
+	printk ("dss-manager.c: dss_start_update\n");
+	spin_lock_irqsave(&dss_cache.lock, flags);
 	for (i = 0; i < num_ovls; ++i) {
 		oc = &dss_cache.overlay_cache[i];
 		if (oc->channel != mgr->id)
 			continue;
 
+		if (oc->shadow_dirty) {
+			dss_ovl_program_cb(&oc->cb, i);
+			oc->dispc_channel = oc->channel;
+		}
 		oc->shadow_dirty = false;
 	}
 
@@ -1384,9 +1557,13 @@ void dss_start_update(struct omap_dss_device *dssdev)
 		if (mgr->id != i)
 			continue;
 
+		if (mc->shadow_dirty)
+			dss_ovl_program_cb(&mc->cb, i);
 		mc->shadow_dirty = false;
 	}
-
+	schedule_completion_irq();
+	spin_unlock_irqrestore(&dss_cache.lock, flags);
+	
 	dssdev->manager->enable(dssdev->manager);
 }
 
@@ -1399,6 +1576,7 @@ static void dss_apply_irq_handler(void *data, u32 mask)
 	int i, r;
 	bool mgr_busy[MAX_DSS_MANAGERS];
 
+	printk ("dss-manager.c: dss_apply_irq_handler\n");
 	for (i = 0; i < num_mgrs; i++)
 		mgr_busy[i] = dispc_go_busy(i);
 
@@ -1406,15 +1584,21 @@ static void dss_apply_irq_handler(void *data, u32 mask)
 
 	for (i = 0; i < num_ovls; ++i) {
 		oc = &dss_cache.overlay_cache[i];
-		if (!mgr_busy[oc->channel])
+		if (!mgr_busy[oc->channel]) {
+			dss_ovl_program_cb(&oc->cb, i);
 			oc->shadow_dirty = false;
+		}
 	}
 
 	for (i = 0; i < num_mgrs; ++i) {
 		mc = &dss_cache.manager_cache[i];
-		if (!mgr_busy[i])
+		if (!mgr_busy[i]) {
+			dss_ovl_program_cb(&mc->cb, i);
 			mc->shadow_dirty = false;
+		}
 	}
+	
+	schedule_completion_irq();
 
 	r = configure_dispc();
 	if (r == 1)
@@ -1439,6 +1623,22 @@ static void dss_apply_irq_handler(void *data, u32 mask)
 
 end:
 	spin_unlock(&dss_cache.lock);
+}
+
+int omap_dss_manager_unregister_callback(struct omap_overlay_manager *mgr,
+					 struct omapdss_ovl_cb *cb)
+{
+	unsigned long flags;
+	int r = 0;
+	spin_lock_irqsave(&dss_cache.lock, flags);
+	if (mgr->info_dirty &&
+	    mgr->info.cb.fn == cb->fn &&
+	    mgr->info.cb.data == cb->data)
+		mgr->info.cb.fn = NULL;
+	else
+		r = -EPERM;
+	spin_unlock_irqrestore(&dss_cache.lock, flags);
+	return r;
 }
 
 static int omap_dss_mgr_apply(struct omap_overlay_manager *mgr)
@@ -1811,6 +2011,51 @@ static int dss_check_manager(struct omap_overlay_manager *mgr)
 	return 0;
 }
 
+#ifdef CONFIG_DEBUG_FS
+static void seq_print_cb(struct seq_file *s, struct omapdss_ovl_cb *cb)
+{
+	if (!cb->fn) {
+		seq_printf(s, "(none)\n");
+		return;
+	}
+
+	seq_printf(s, "mask=%c%c%c%c [%p] %pf\n",
+		   (cb->mask & DSS_COMPLETION_CHANGED) ? 'C' : '-',
+		   (cb->mask & DSS_COMPLETION_PROGRAMMED) ? 'P' : '-',
+		   (cb->mask & DSS_COMPLETION_DISPLAYED) ? 'D' : '-',
+		   (cb->mask & DSS_COMPLETION_RELEASED) ? 'R' : '-',
+		   cb->data,
+		   cb->fn);
+}
+#endif
+
+static void seq_print_cbs(struct omap_overlay_manager *mgr, struct seq_file *s)
+{
+#ifdef CONFIG_DEBUG_FS
+	struct manager_cache_data *mc;
+	unsigned long flags;
+
+	spin_lock_irqsave(&dss_cache.lock, flags);
+
+	mc = &dss_cache.manager_cache[mgr->id];
+
+	seq_printf(s, "  DISPC pipeline:\n\n"
+		      "    info:%13s ", mgr->info_dirty ? "DIRTY" : "clean");
+	seq_print_cb(s, &mgr->info.cb);
+	seq_printf(s, "    cache:%12s ", mc->dirty ? "DIRTY" : "clean");
+	seq_print_cb(s, &mc->cb.cache);
+	seq_printf(s, "    shadow:  %s %s ",
+			mc->cb.shadow_enabled ? "ACT" : "off",
+			mc->shadow_dirty ? "DIRTY" : "clean");
+	seq_print_cb(s, &mc->cb.shadow);
+	seq_printf(s, "    dispc:%12s ",
+			mc->cb.dispc_displayed ? "DISPLAYED" : "");
+	seq_print_cb(s, &mc->cb.dispc);
+	seq_printf(s, "\n");
+
+	spin_unlock_irqrestore(&dss_cache.lock, flags);
+#endif
+}
 int omap_dss_ovl_set_info(struct omap_overlay *ovl,
 		struct omap_overlay_info *info)
 {
@@ -1937,6 +2182,7 @@ int dss_init_overlay_managers(struct platform_device *pdev)
 		mgr->get_manager_info = &omap_dss_mgr_get_info;
 		mgr->wait_for_go = &dss_mgr_wait_for_go;
 		mgr->wait_for_vsync = &dss_mgr_wait_for_vsync;
+		mgr->dump_cb = &seq_print_cbs;
 
 		mgr->enable = &dss_mgr_enable;
 		mgr->disable = &dss_mgr_disable;

@@ -348,6 +348,7 @@ static struct {
 	struct work_struct error_work;
 
 	u32		ctx[DISPC_SZ_REGS / sizeof(u32)];
+	u32	channel_irq[3]; /* Max channels hardcoded to 3*/
 
 #ifdef CONFIG_OMAP2_DSS_COLLECT_IRQ_STATS
 	spinlock_t irq_stats_lock;
@@ -3483,6 +3484,16 @@ static void _enable_lcd_out(enum omap_channel channel, bool enable)
 		REG_FLD_MOD(DISPC_CONTROL, enable ? 1 : 0, 0, 0);
 }
 
+void omap_dispc_set_irq_type(int channel, enum omap_dispc_irq_type type)
+{
+	if (type == OMAP_DISPC_IRQ_TYPE_VSYNC) {
+		dispc.channel_irq[channel] = channel == OMAP_DSS_CHANNEL_LCD2 ?
+			DISPC_IRQ_VSYNC2 : DISPC_IRQ_VSYNC;
+	} else {
+		dispc.channel_irq[channel] = channel == OMAP_DSS_CHANNEL_LCD2 ?
+			DISPC_IRQ_FRAMEDONE2 : DISPC_IRQ_FRAMEDONE;
+	}
+}
 
 static void dispc_enable_lcd_out(enum omap_channel channel, bool enable)
 {
@@ -3498,11 +3509,11 @@ static void dispc_enable_lcd_out(enum omap_channel channel, bool enable)
 	 * prevents DSS from going to OFF mode */
 	if (OMAP_DSS_CHANNEL_LCD2 == channel) {
 		is_on = REG_GET(DISPC_CONTROL2, 0, 0);
-		irq = DISPC_IRQ_FRAMEDONE2;
 	} else {
 		is_on = REG_GET(DISPC_CONTROL, 0, 0);
-		irq = DISPC_IRQ_FRAMEDONE;
 	}
+
+	irq = dispc.channel_irq[channel];
 
 	if (!enable && is_on) {
 		init_completion(&frame_done_completion);

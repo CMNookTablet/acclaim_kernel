@@ -2735,7 +2735,7 @@ PVRSRV_ERROR SGXGetMiscInfoKM(PVRSRV_SGXDEV_INFO	*psDevInfo,
 			PVR_LOG(("User requested SGX debug info"));
 
 			
-			SGXDumpDebugInfo(psDeviceNode->pvDevice, IMG_FALSE);
+//			SGXDumpDebugInfo(psDeviceNode->pvDevice, IMG_FALSE);
 
 			return PVRSRV_OK;
 		}

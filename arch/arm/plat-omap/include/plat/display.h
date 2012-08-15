@@ -211,6 +211,11 @@ enum omap_dss_display_state {
 	OMAP_DSS_DISPLAY_TRANSITION,
 };
 
+enum omap_dispc_irq_type {
+	OMAP_DISPC_IRQ_TYPE_FRAMEDONE,
+	OMAP_DISPC_IRQ_TYPE_VSYNC,
+};
+
 enum omap_dss_reset_phase {
 	OMAP_DSS_RESET_OFF = 1,
 	OMAP_DSS_RESET_ON = 2,
@@ -614,7 +619,7 @@ struct omap_overlay_manager {
 	int (*apply)(struct omap_overlay_manager *mgr);
 	int (*wait_for_go)(struct omap_overlay_manager *mgr);
 	int (*wait_for_vsync)(struct omap_overlay_manager *mgr);
-
+	void (*dump_cb)(struct omap_overlay_manager *mgr, struct seq_file *s);
 	int (*enable)(struct omap_overlay_manager *mgr);
 	int (*disable)(struct omap_overlay_manager *mgr);
 };
@@ -683,6 +688,8 @@ struct omap_dss_device {
 	struct device dev;
 
 	enum omap_display_type type;
+
+	bool first_vsync;
 
 	union {
 		struct {
@@ -937,6 +944,7 @@ int omap_dispc_wait_for_irq_timeout(u32 irqmask, unsigned long timeout);
 int omap_dispc_wait_for_irq_interruptible_timeout(u32 irqmask,
 			unsigned long timeout);
 int omap_dispc_run_on_irq(u32 irqmask, void(*on_isr_cb)(void *), void *data);
+void omap_dispc_set_irq_type(int channel, enum omap_dispc_irq_type type);
 
 #define to_dss_driver(x) container_of((x), struct omap_dss_driver, driver)
 #define to_dss_device(x) container_of((x), struct omap_dss_device, dev)
@@ -983,4 +991,27 @@ int omap_rfbi_update(struct omap_dss_device *dssdev,
 void change_base_address(int id, u32 p_uv_addr);
 bool is_hdmi_interlaced(void);
 
+int omap_dss_manager_unregister_callback(struct omap_overlay_manager *mgr,
+					 struct omapdss_ovl_cb *cb);
+
+/* generic callback handling */
+static inline void dss_ovl_cb(struct omapdss_ovl_cb *cb, int id, int status)
+{
+	printk ("dss_ovl_cb: %d\n", status);
+	if (cb->fn && (cb->mask & status)) {
+		printk ("dss_ovl_cb fn set and mask updated from: %d\n",
+			cb->mask);
+		cb->mask &= cb->fn(cb->data, id, status);
+		printk ("dss_ovl_cb fn set and mask updated to: %d\n",
+			cb->mask);
+	}
+	if (status & DSS_COMPLETION_RELEASED)	{
+		printk ("dss_ovl_cb: COMPLETION_RELEASED\n");
+		cb->mask = 0;
+	}
+	if (!cb->mask) 	{
+		printk ("dss_ovl_cb: cb fn erased\n");
+		cb->fn = NULL;
+	}
+}
 #endif

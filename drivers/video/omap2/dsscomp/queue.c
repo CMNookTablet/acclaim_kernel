@@ -424,6 +424,7 @@ static u32 dsscomp_mgr_callback(void *data, int id, int status)
 {
 	struct dsscomp_data *comp = data;
 
+	printk ("dsscomp-queue.c: dsscomp_mgr_callback\n");
 	if (status == DSS_COMPLETION_PROGRAMMED ||
 	    (status == DSS_COMPLETION_DISPLAYED &&
 	     comp->state != DSSCOMP_STATE_DISPLAYED) ||
@@ -603,9 +604,8 @@ skip_ovl_set:
 	 */
 	if (cb_programmed && r) {
 		/* clear error if callback already registered */
-#pragma message "AIKES"
-		//		if (omap_dss_manager_unregister_callback(mgr, &cb))
-		//			r = 0;
+		if (omap_dss_manager_unregister_callback(mgr, &cb))
+			r = 0;
 	}
 	/* if failed to apply, kick out prior composition */
 
@@ -656,6 +656,7 @@ int dsscomp_state_notifier(struct notifier_block *nb,
 
 static void dsscomp_do_apply(struct work_struct *work)
 {
+	printk ("dsscomp-queue.c: dsscomp_do_apply\n");
 	struct dsscomp_apply_work *wk = container_of(work, typeof(*wk), work);
 	/* complete compositions that failed to apply */
 	if (dsscomp_apply(wk->comp))
@@ -669,6 +670,8 @@ int dsscomp_delayed_apply(dsscomp_t comp)
 	struct dsscomp_apply_work *wk = kzalloc(sizeof(*wk), GFP_NOWAIT);
 	if (!wk)
 		return -ENOMEM;
+
+	printk ("dsscomp-queue.c: dsscomp_delayed_apply\n");
 
 	mutex_lock(&mtx);
 
@@ -759,8 +762,7 @@ void dsscomp_dbg_comps(struct seq_file *s)
 		}
 
 		/* print manager cache */
-#pragma message "AIKES"
-		//		mgr->dump_cb(mgr, s);
+		mgr->dump_cb(mgr, s);
 	}
 	mutex_unlock(&dbg_mtx);
 #endif
