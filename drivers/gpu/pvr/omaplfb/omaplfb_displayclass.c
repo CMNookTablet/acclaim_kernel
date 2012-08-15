@@ -791,11 +791,11 @@ void OMAPLFBSwapHandler(OMAPLFB_BUFFER *psBuffer)
 	psDevInfo->sPVRJTable.pfnPVRSRVCmdComplete((IMG_HANDLE)psBuffer->hCmdComplete, IMG_TRUE);
 }
 
-//#if defined(CONFIG_DSSCOMP)
+#if defined(CONFIG_DSSCOMP)
 
 #include <mach/tiler.h>
 #include <video/dsscomp.h>
-//#include <plat/dsscomp.h>
+#include <plat/dsscomp.h>
 
 void sgx_idle_log_flip(void);
 
@@ -825,7 +825,6 @@ static IMG_BOOL ProcessFlipV1(IMG_HANDLE hCmdCookie,
 	{
 		psBuffer->hCmdComplete = (OMAPLFB_HANDLE)hCmdCookie;
 		psBuffer->ulSwapInterval = ulSwapInterval;
-#if defined(CONFIG_DSSCOMP)
 		if (is_tiler_addr(psBuffer->sSysAddr.uiAddr)) {
 			IMG_UINT32 w = psBuffer->psDevInfo->sDisplayDim.ui32Width;
 			IMG_UINT32 h = psBuffer->psDevInfo->sDisplayDim.ui32Height;
@@ -853,8 +852,6 @@ static IMG_BOOL ProcessFlipV1(IMG_HANDLE hCmdCookie,
 					      dsscomp_proxy_cmdcomplete,
 					      (void *) psBuffer->hCmdComplete);
 		} else {
-#endif
-			{
 			OMAPLFBQueueBufferForSwap(psSwapChain, psBuffer);
 		}
 	}
@@ -864,7 +861,6 @@ static IMG_BOOL ProcessFlipV1(IMG_HANDLE hCmdCookie,
 	return IMG_TRUE;
 }
 
-#if defined(CONFIG_DSSCOMP)
 #include "servicesint.h"
 #include "services.h"
 #include "mm.h"
@@ -1222,6 +1218,7 @@ static OMAPLFB_ERROR OMAPLFBInitFBDev(OMAPLFB_DEVINFO *psDevInfo)
 		psPVRFBInfo->ulFBSize = FBSize;
 		psPVRFBInfo->bIs2D = OMAPLFB_FALSE;
 		psPVRFBInfo->psPageList = IMG_NULL;
+		psPVRFBInfo->psIONHandle = IMG_NULL;
 	}
 	psPVRFBInfo->ulBufferSize = psPVRFBInfo->ulHeight * psPVRFBInfo->ulByteStride;
 	
@@ -1298,12 +1295,11 @@ static void OMAPLFBDeInitFBDev(OMAPLFB_DEVINFO *psDevInfo)
 	psLINFBOwner = psLINFBInfo->fbops->owner;
 
 	kfree(psPVRFBInfo->psPageList);
-#if defined(CONFIG_ION_OMAP)
 	if (psPVRFBInfo->psIONHandle)
 	{
 		ion_free(gpsIONClient, psPVRFBInfo->psIONHandle);
 	}
-#endif
+
 	if (psLINFBInfo->fbops->fb_release != NULL) 
 	{
 		(void) psLINFBInfo->fbops->fb_release(psLINFBInfo, 0);

@@ -285,6 +285,20 @@ static int boxer_panel_reset(struct omap_dss_device *dssdev, enum omap_dss_reset
 	return ret;
 }
 
+static int boxer_set_update_mode(struct omap_dss_device *dssdev,
+				 enum omap_dss_update_mode mode)
+{
+	if (mode != OMAP_DSS_UPDATE_MANUAL)
+			return -EINVAL;
+	return 0;
+}
+
+static enum omap_dss_update_mode 
+boxer_get_update_mode(struct omap_dss_device *dssdev)
+{
+	return OMAP_DSS_UPDATE_MANUAL;
+}
+
 static struct omap_dss_driver boxer_driver = {
 	.probe		= boxer_panel_probe,
 	.remove		= boxer_panel_remove,
@@ -296,6 +310,8 @@ static struct omap_dss_driver boxer_driver = {
 	.set_timings    = dpi_set_timings,
 	.check_timings  = dpi_check_timings,
 	.get_dimension  = boxer_get_dimension,
+	.set_update_mode = boxer_set_update_mode,
+	.get_update_mode = boxer_get_update_mode,
 	.reset			= boxer_panel_reset,
 	.driver		= {
 		.name	= "boxer_panel_drv",
