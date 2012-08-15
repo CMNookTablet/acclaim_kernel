@@ -842,7 +842,10 @@ struct omap_dss_driver {
 			struct omap_video_timings *timings);
 
 	int (*set_wss)(struct omap_dss_device *dssdev, u32 wss);
-	u32 (*get_wss)(struct omap_dss_device *dssdev);
+	u32 (*get_wss)(struct omap_dss_device *dssdev);	
+	int (*get_modedb)(struct omap_dss_device *dssdev,
+			  struct fb_videomode *modedb,
+			  int modedb_len);
 	int (*set_mode)(struct omap_dss_device *dssdev,
 			struct fb_videomode *mode);
 	void (*enable_device_detect)(struct omap_dss_device *dssdev, u8 enable);
