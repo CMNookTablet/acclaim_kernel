@@ -620,7 +620,6 @@ dss_ovl_configure_cb(struct callback_states *st, int i, bool enabled)
 static inline void
 dss_ovl_program_cb(struct callback_states *st, int i)
 {
-	printk ("dss-manager.c: dss_ovl_program_cb...\n");
 	/* mark previous programming as completed */
 	dss_ovl_cb(&st->dispc, i, st->dispc_displayed ?
 				DSS_COMPLETION_RELEASED : DSS_COMPLETION_TORN);
@@ -1445,8 +1444,6 @@ static void dss_completion_irq_handler(void *data, u32 mask)
 	};
 	int i;
 
-	printk ("dss-manager.c: dss_completion_irq_handler\n");
-
 	spin_lock(&dss_cache.lock);
 
 	for (i = 0; i < num_mgrs; i++) {
@@ -1487,11 +1484,8 @@ static void schedule_completion_irq(void)
 	u32 mask = 0;
 	int i;
 
-	printk ("dss-manager.c: schedule_completion_irq\n");
 	for (i = 0; i < num_mgrs; i++) {
-		printk ("dss-manager.c: num_mgrs %d\n", i);
 		mc = &dss_cache.manager_cache[i];
-		printk ("dss-manager.c: schedule_completion_irq: fn: %p mask: %d\n", mc->cb.dispc.fn, mc->cb.dispc.mask);
 		if (mc->cb.dispc.fn &&
 				(mc->cb.dispc.mask & DSS_COMPLETION_DISPLAYED))
 			mask |= masks[i];
@@ -1499,28 +1493,19 @@ static void schedule_completion_irq(void)
 
 	/* notify all overlays on that manager */
 	for (i = 0; i < num_ovls; i++) {
-		printk ("dss-manager.c: schedule_completion_irq num_ovls: %d\n",
-			i);
 		oc = &dss_cache.overlay_cache[i];
-		printk ("dss-manager.c: schedule_completion_irq: "
-			"fn: %p en: %d mask: %d\n", 
-			oc->cb.dispc.fn, oc->enabled, mc->cb.dispc.mask);
 		if (oc->cb.dispc.fn && oc->enabled &&
 				(oc->cb.dispc.mask & DSS_COMPLETION_DISPLAYED))
 			mask |= masks[oc->channel];
 	}
 
-	printk ("dss-manager.c: schedule_completion_irq %u %u\n",
-		mask, dss_cache.comp_irq_enabled);
 	if (mask != dss_cache.comp_irq_enabled) {
 		if (dss_cache.comp_irq_enabled)	{
-			printk ("omap_dispc_unregister_isr\n");
 			omap_dispc_unregister_isr(dss_completion_irq_handler,
 						  NULL, 
 						  dss_cache.comp_irq_enabled);
 		}
 		if (mask) {			
-			printk ("omap_dispc_register_isr\n");
 			omap_dispc_register_isr(dss_completion_irq_handler,
 						NULL, mask);
 		}
@@ -1577,7 +1562,6 @@ static void dss_apply_irq_handler(void *data, u32 mask)
 	int i, r;
 	bool mgr_busy[MAX_DSS_MANAGERS];
 
-	printk ("dss-manager.c: dss_apply_irq_handler\n");
 	for (i = 0; i < num_mgrs; i++)
 		mgr_busy[i] = dispc_go_busy(i);
 

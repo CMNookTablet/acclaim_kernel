@@ -32,9 +32,6 @@
 #ifdef CONFIG_ION_OMAP
 void omap_ion_init(void);
 void omap4_register_ion(void);
-#else
-inline void omap_ion_init(void) { return; }
-inline void omap4_register_ion(void) { return; }
 #endif
 
 #endif

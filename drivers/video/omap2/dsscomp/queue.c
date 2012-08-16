@@ -424,7 +424,6 @@ static u32 dsscomp_mgr_callback(void *data, int id, int status)
 {
 	struct dsscomp_data *comp = data;
 
-	printk ("dsscomp-queue.c: dsscomp_mgr_callback\n");
 	if (status == DSS_COMPLETION_PROGRAMMED ||
 	    (status == DSS_COMPLETION_DISPLAYED &&
 	     comp->state != DSSCOMP_STATE_DISPLAYED) ||
@@ -574,11 +573,12 @@ skip_ovl_set:
 	comp->state = DSSCOMP_STATE_APPLIED;
 	log_state(comp, dsscomp_apply, 0);
 
+	
 	if (!d->win.w && !d->win.x)
 		d->win.w = dssdev->panel.timings.x_res - d->win.x;
 	if (!d->win.h && !d->win.y)
 		d->win.h = dssdev->panel.timings.y_res - d->win.y;
-
+	
 	mutex_lock(&mtx);
 	if (mgrq[comp->ix].blanking) {
 		pr_info_ratelimited("ignoring apply mgr(%s) while blanking\n",
@@ -621,7 +621,6 @@ skip_ovl_set:
 			/* wait for sync to do smooth animations */
 			mgr->wait_for_vsync(mgr);
 	}
-
 done:
 	return r;
 }
@@ -640,9 +639,7 @@ int dsscomp_state_notifier(struct notifier_block *nb,
 	if (mgr) {
 		mutex_lock(&mtx);
 		if (state == OMAP_DSS_DISPLAY_DISABLED) {
-#pragma message "AIKES"
-
-			//			mgr->blank(mgr, true);
+			mgr->blank(mgr, true);
 			mgrq[mgr->id].blanking = true;
 		} else if (state == OMAP_DSS_DISPLAY_ACTIVE) {
 			mgrq[mgr->id].blanking = false;
@@ -655,7 +652,6 @@ int dsscomp_state_notifier(struct notifier_block *nb,
 
 static void dsscomp_do_apply(struct work_struct *work)
 {
-	printk ("dsscomp-queue.c: dsscomp_do_apply\n");
 	struct dsscomp_apply_work *wk = container_of(work, typeof(*wk), work);
 	/* complete compositions that failed to apply */
 	if (dsscomp_apply(wk->comp))
@@ -669,8 +665,6 @@ int dsscomp_delayed_apply(dsscomp_t comp)
 	struct dsscomp_apply_work *wk = kzalloc(sizeof(*wk), GFP_NOWAIT);
 	if (!wk)
 		return -ENOMEM;
-
-	printk ("dsscomp-queue.c: dsscomp_delayed_apply\n");
 
 	mutex_lock(&mtx);
 

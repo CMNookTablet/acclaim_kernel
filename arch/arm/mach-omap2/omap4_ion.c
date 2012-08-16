@@ -53,6 +53,7 @@ static struct platform_device omap4_ion_device = {
 	},
 };
 
+#ifdef CONFIG_ION_OMAP
 void __init omap4_register_ion(void)
 {
 	platform_device_register(&omap4_ion_device);
@@ -74,3 +75,4 @@ void __init omap_ion_init(void)
 				       omap4_ion_data.heaps[i].base);
 		}
 }
+#endif

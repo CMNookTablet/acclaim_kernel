@@ -1002,22 +1002,11 @@ int omap_dss_manager_unregister_callback(struct omap_overlay_manager *mgr,
 /* generic callback handling */
 static inline void dss_ovl_cb(struct omapdss_ovl_cb *cb, int id, int status)
 {
-	printk ("dss_ovl_cb: %d\n fn: %p mask: %d", status, cb->fn, cb->mask);
-	printk ("dss_ovl_cb: %d\n", status);
-	if (cb->fn && (cb->mask & status)) {
-		printk ("dss_ovl_cb fn set and mask updated from: %d\n",
-			cb->mask);
+	if (cb->fn && (cb->mask & status))
 		cb->mask &= cb->fn(cb->data, id, status);
-		printk ("dss_ovl_cb fn set and mask updated to: %d\n",
-			cb->mask);
-	}
-	if (status & DSS_COMPLETION_RELEASED)	{
-		printk ("dss_ovl_cb: COMPLETION_RELEASED\n");
+	if (status & DSS_COMPLETION_RELEASED)
 		cb->mask = 0;
-	}
-	if (!cb->mask) 	{
-		printk ("dss_ovl_cb: cb fn erased\n");
+	if (!cb->mask)
 		cb->fn = NULL;
-	}
 }
 #endif
