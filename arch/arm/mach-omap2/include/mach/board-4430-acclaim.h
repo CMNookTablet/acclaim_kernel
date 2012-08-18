@@ -35,7 +35,7 @@ extern ulong get_sdram_size(void);
 #define BN_USB_MANUFACTURER_NAME    "B&N"
 #define BN_USB_PRODUCT_NAME	    "NOOK Tablet"
 
-#define ACCLAIM_RAM_CONSOLE_START        (0xA0000000)
+#define ACCLAIM_RAM_CONSOLE_START        (0x80000000 + SZ_256M)
 #define ACCLAIM_RAM_CONSOLE_SIZE         (1 << CONFIG_LOG_BUF_SHIFT)
 
 struct boxer_panel_data {
