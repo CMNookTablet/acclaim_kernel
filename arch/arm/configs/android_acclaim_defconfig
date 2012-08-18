@@ -1,7 +1,7 @@
 #
 # Automatically generated make config: don't edit
 # Linux kernel version: 2.6.35.7
-# Fri Aug 17 00:55:31 2012
+# Sat Aug 18 01:23:00 2012
 #
 CONFIG_ARM=y
 CONFIG_HAVE_PWM=y
@@ -1399,7 +1399,7 @@ CONFIG_OMAP2_DSS_FAKE_VSYNC=y
 CONFIG_OMAP2_DSS_MIN_FCK_PER_PCK=4
 CONFIG_FB_OMAP2=y
 CONFIG_FB_OMAP2_DEBUG_SUPPORT=y
-CONFIG_FB_OMAP2_NUM_FBS=1
+CONFIG_FB_OMAP2_NUM_FBS=2
 
 #
 # OMAP2/3 Display Device Drivers
