@@ -70,7 +70,7 @@ IMG_UINT32 PVRSRV_BridgeDispatchKM(IMG_UINT32	Ioctl,
 								   IMG_UINT32	OutBufLen,
 								   IMG_UINT32	*pdwBytesTransferred);
 
-//static void sgx_idle_init(void);
+static void sgx_idle_init(void);
 
 #if defined(SGX_OCP_REGS_ENABLED)
 
@@ -494,7 +494,7 @@ PVRSRV_ERROR SysInitialise(IMG_VOID)
 	}
 #endif 
 
-	//sgx_idle_init();
+	sgx_idle_init();
 	return PVRSRV_OK;
 }
 
@@ -969,8 +969,6 @@ PVRSRV_ERROR SysDevicePostPowerState(IMG_UINT32				ui32DeviceIndex,
 	return eError;
 }
 
-#if 0
-
 enum sgx_idle_event_type {
 	SGX_NONE = 0,
 	SGX_IDLE,
@@ -1252,12 +1250,11 @@ static void sgx_idle_init(void)
 	hrtimer_init(&sgx_idle_timer, HRTIMER_BASE_MONOTONIC,
 		     HRTIMER_MODE_REL);
 	sgx_idle_timer.function = sgx_idle_timer_callback;
-	sgx_idle_wq = alloc_ordered_workqueue("sgx_idle", WQ_HIGHPRI);
+	sgx_idle_wq = create_singlethread_workqueue("sgx_idle");
 	INIT_WORK(&sgx_idle_work, sgx_idle_work_func);
 
 	/* XXX: need a sgx_idle_deinit() */
 }
-#endif
 PVRSRV_ERROR SysOEMFunction (	IMG_UINT32	ui32ID,
 								IMG_VOID	*pvIn,
 								IMG_UINT32	ulInSize,
