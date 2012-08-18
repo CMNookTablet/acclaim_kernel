@@ -683,7 +683,9 @@ PVRSRV_ERROR SGXCleanupRequest(PVRSRV_DEVICE_NODE *psDeviceNode,
 			PVR_DPF((PVR_DBG_ERROR,"SGXCleanupRequest: Wait for uKernel to clean up (%u) failed", ui32CleanupType));
 			eError = PVRSRV_ERROR_TIMEOUT;
 			SGXDumpDebugInfo(psDevInfo, IMG_FALSE);
-			PVR_DBG_BREAK;
+#pragma message "FIX ME THIS BLOWS UP HERE."
+			printk ("PVR: FIXME normally it would blow up now...\n");
+			//PVR_DBG_BREAK;
 		}
 		#endif
 	
