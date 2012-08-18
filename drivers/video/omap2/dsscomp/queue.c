@@ -307,7 +307,6 @@ int dsscomp_set_mgr(dsscomp_t comp, struct dss2_mgr_info *mgr)
 	BUG_ON(mgr->ix != comp->frm.mgr.ix);
 
 	comp->frm.mgr = *mgr;
-	printk ("dsscomp_set_mgr sets mode already?: %x\n", comp->frm.mode);
 
 	mutex_unlock(&mtx);
 
@@ -339,7 +338,6 @@ int dsscomp_setup(dsscomp_t comp, enum dsscomp_setup_mode mode,
 
 	BUG_ON(comp->state != DSSCOMP_STATE_ACTIVE);
 
-	printk ("dsscomp_setup: %x\n", mode);
 	comp->frm.mode = mode;
 	comp->frm.win = win;
 

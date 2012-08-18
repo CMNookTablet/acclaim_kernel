@@ -1524,7 +1524,6 @@ void dss_start_update(struct omap_dss_device *dssdev)
 	unsigned long flags;
 	mgr = dssdev->manager;
 	
-	printk ("dss-manager.c: dss_start_update\n");
 	spin_lock_irqsave(&dss_cache.lock, flags);
 	for (i = 0; i < num_ovls; ++i) {
 		oc = &dss_cache.overlay_cache[i];
