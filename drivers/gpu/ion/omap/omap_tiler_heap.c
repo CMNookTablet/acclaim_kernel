@@ -486,9 +486,12 @@ struct ion_heap *omap_tiler_heap_create(struct ion_platform_heap *data)
 	heap->heap.name = data->name;
 	heap->heap.id = data->id;
 
+#pragma message "ION: fix for 512 MB devices needed"
+#if 0
 	if (omap_total_ram_size() <= SZ_512M)
 		use_dynamic_pages = true;
 	else
+#endif
 		use_dynamic_pages = false;
 
 	return &heap->heap;
