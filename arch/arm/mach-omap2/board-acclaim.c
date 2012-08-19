@@ -46,6 +46,7 @@
 #include <asm/mach/arch.h>
 #include <asm/mach/map.h>
 
+#include <plat/android-display.h>
 #include <plat/board.h>
 #include <plat/common.h>
 #include <plat/control.h>
@@ -59,6 +60,8 @@
 
 #include "mux.h"
 #include "smartreflex-class3.h"
+
+#define ACCLAIM_FB_RAM_SIZE             SZ_16M /* 1920×1080*4 * 2 */
 
 extern unsigned int system_modelid;
 volatile unsigned int KERNEL_SV = 0x0;
@@ -112,6 +115,65 @@ static inline void ramconsole_reserve_sdram(void)
 static inline void ramconsole_reserve_sdram(void) {}
 #endif /* CONFIG_ANDROID_RAM_CONSOLE */
 
+static struct omap_dss_device acclaim_boxer_device = {
+	.phy		= {
+		.dpi	= {
+			.data_lines	= 24,
+		},
+	},
+	.panel          = {
+		.config		= OMAP_DSS_LCD_TFT | OMAP_DSS_LCD_IVS |
+		OMAP_DSS_LCD_IHS,
+		.timings	= {
+			.x_res          = 1024,
+			.y_res          = 600,
+			.pixel_clock    = 46000, /* in kHz */
+			.hfp            = 160,   /* HFP fix 160 */
+			.hsw            = 10,    /* HSW = 1~140 */
+			.hbp            = 150,   /* HSW + HBP = 160 */
+			.vfp            = 12,    /* VFP fix 12 */
+			.vsw            = 3,     /* VSW = 1~20 */
+			.vbp            = 20,    /* VSW + VBP = 23 */
+		},
+		.width_in_um = 158000,
+		.height_in_um = 92000,
+	},
+	.name			= "lcd2",
+	.driver_name		= "boxer_panel",
+	.type			= OMAP_DISPLAY_TYPE_DPI,
+	.channel		= OMAP_DSS_CHANNEL_LCD2,
+};
+
+static struct omap_dss_device *acclaim_dss_devices[] = {
+	&acclaim_boxer_device,
+};
+ 
+static struct omap_dss_board_info acclaim_dss_data = {
+	.num_devices	= ARRAY_SIZE(acclaim_dss_devices),
+	.devices	= acclaim_dss_devices,
+	.default_device	= &acclaim_boxer_device,
+};
+
+static struct spi_board_info tablet_spi_board_info[] __initdata = {
+	{
+		.modalias= "boxer_disp_spi",
+		.bus_num= 4,     /* McSPI4 */
+		.chip_select= 0,
+		.max_speed_hz= 375000,
+	},
+};
+
+static struct omapfb_platform_data acclaim_fb_pdata = {
+	.mem_desc = {
+		.region_cnt = 1,
+		.region = {
+			[0] = {
+				.size = ACCLAIM_FB_RAM_SIZE,
+			},
+		},
+	},
+};
+
 static void __init omap_4430_acclaim_init(void)
 {
 	omap_dmm_init();
@@ -131,6 +193,22 @@ static void __init omap_4430_acclaim_map_io(void)
 static void __init acclaim_reserve(void)
 {
 	ramconsole_reserve_sdram();
+
+#ifdef CONFIG_ION_OMAP
+	omap_android_display_setup(&acclaim_dss_data,
+				   NULL,
+				   NULL,
+				   &acclaim_fb_pdata,
+				   get_omap_ion_platform_data());
+	omap_ion_init();
+#else
+	omap_android_display_setup(&acclaim_dss_data,
+				   NULL,
+				   NULL,
+				   &acclaim_fb_pdata,
+				   NULL);
+#endif
+
 	/* do the static reservations first */
 	memblock_remove(PHYS_ADDR_SMC_MEM, PHYS_ADDR_SMC_SIZE);
 

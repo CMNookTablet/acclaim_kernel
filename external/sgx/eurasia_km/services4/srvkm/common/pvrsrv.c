@@ -476,6 +476,7 @@ PVRSRV_ERROR IMG_CALLCONV PVRSRVFinaliseSystem(IMG_BOOL bInitSuccessful)
 	SYS_DATA		*psSysData;
 	PVRSRV_ERROR		eError;
 
+	printk ("PVR: PVRSRVFinaliseSystem called...\n");
 	PVR_DPF((PVR_DBG_MESSAGE, "PVRSRVFinaliseSystem"));
 
 	SysAcquireData(&psSysData);

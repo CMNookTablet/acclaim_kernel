@@ -494,6 +494,7 @@ PVRSRV_ERROR SysFinalise(IMG_VOID)
 {
 	PVRSRV_ERROR eError = PVRSRV_OK;
 
+	printk ("PVR: SysFinalise called\n");
 #if defined(SUPPORT_ACTIVE_POWER_MANAGEMENT)
 	eError = EnableSGXClocksWrap(gpsSysData);
 	if (eError != PVRSRV_OK)

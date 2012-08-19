@@ -1,0 +1,5 @@
+0x00000000	gpsIONClient	/mnt/data/chris/android/nook/src/kernel/cm9-legacy/external/sgx/eurasia_km/eurasiacon/binary2_540_120_omap4430_android_release/target/kbuild/pvrsrvkm_sgx540_120	EXPORT_SYMBOL
+0x00000000	PVRSRVExportFDToIONHandle	/mnt/data/chris/android/nook/src/kernel/cm9-legacy/external/sgx/eurasia_km/eurasiacon/binary2_540_120_omap4430_android_release/target/kbuild/pvrsrvkm_sgx540_120	EXPORT_SYMBOL
+0x00000000	PVRGetBufferClassJTable	/mnt/data/chris/android/nook/src/kernel/cm9-legacy/external/sgx/eurasia_km/eurasiacon/binary2_540_120_omap4430_android_release/target/kbuild/pvrsrvkm_sgx540_120	EXPORT_SYMBOL
+0x00000000	PVRSRVExportFDToIONHandles	/mnt/data/chris/android/nook/src/kernel/cm9-legacy/external/sgx/eurasia_km/eurasiacon/binary2_540_120_omap4430_android_release/target/kbuild/pvrsrvkm_sgx540_120	EXPORT_SYMBOL
+0x00000000	PVRGetDisplayClassJTable	/mnt/data/chris/android/nook/src/kernel/cm9-legacy/external/sgx/eurasia_km/eurasiacon/binary2_540_120_omap4430_android_release/target/kbuild/pvrsrvkm_sgx540_120	EXPORT_SYMBOL

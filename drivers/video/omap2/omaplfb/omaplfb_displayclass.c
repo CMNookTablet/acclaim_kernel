@@ -1382,6 +1382,8 @@ static OMAPLFB_ERROR OMAPLFBInitFBDev(OMAPLFB_DEVINFO *psDevInfo)
 	unsigned uiFBDevID = psDevInfo->uiFBDevID;
 	struct sgx_omaplfb_config *psFBPlatConfig;
 
+	printk ("OMAPLFBInitFBDev....\n");
+
 	OMAPLFB_CONSOLE_LOCK();
 
 	psLINFBInfo = registered_fb[uiFBDevID];
@@ -1440,6 +1442,7 @@ static OMAPLFB_ERROR OMAPLFBInitFBDev(OMAPLFB_DEVINFO *psDevInfo)
 	else
 #endif
 	{
+		printk ("OMAPLFBInitFBDev no tiler2d_buffers....\n");
 		/* Fall back to allocate flip chain buffers with VRAM */
 		eError = OMAPLFBInitFBVRAM(psDevInfo, psLINFBInfo, psPVRFBInfo);
 		if (eError != OMAPLFB_OK)
@@ -1589,6 +1592,7 @@ static OMAPLFB_DEVINFO *OMAPLFBInitDev(unsigned uiFBDevID)
 		goto ErrorExit;
 	}
 
+	printk ("OMAPLFBInitDev....\n");
 	
 	memset(psDevInfo, 0, sizeof(OMAPLFB_DEVINFO));
 

@@ -765,7 +765,7 @@ void dsscomp_gralloc_init(struct dsscomp_dev *cdev_)
 					tiler1d_slot_size(cdev_), 1, &phys,
 					NULL);
 			if (IS_ERR_OR_NULL(slot)) {
-				pr_err("could not allocate slot");
+				pr_err("could not allocate slot\n");
 				break;
 			}
 			slots[i].slot = slot;

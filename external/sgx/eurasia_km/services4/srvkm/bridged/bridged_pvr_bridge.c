@@ -4024,25 +4024,37 @@ PVRSRVInitSrvDisconnectBW(IMG_UINT32 ui32BridgeID,
 						  PVRSRV_BRIDGE_RETURN *psRetOUT,
 						  PVRSRV_PER_PROCESS_DATA *psPerProc)
 {
+	printk ("PVRSRVInitSrvDisconnectBW....1\n");
+
 	PVRSRV_BRIDGE_ASSERT_CMD(ui32BridgeID, PVRSRV_BRIDGE_INITSRV_DISCONNECT);
+
+	printk ("PVRSRVInitSrvDisconnectBW....2\n");
 
 	if(!psPerProc->bInitProcess)
 	{
+		printk ("PVRSRVInitSrvDisconnectBW....3\n");
 		psRetOUT->eError = PVRSRV_ERROR_SRV_DISCONNECT_FAILED;
 		return 0;
 	}
 
+	printk ("PVRSRVInitSrvDisconnectBW....4\n");
 	psPerProc->bInitProcess = IMG_FALSE;
 
 	PVRSRVSetInitServerState(PVRSRV_INIT_SERVER_RUNNING, IMG_FALSE);
+	printk ("PVRSRVInitSrvDisconnectBW....5\n");
 	PVRSRVSetInitServerState(PVRSRV_INIT_SERVER_RAN, IMG_TRUE);
 
+	printk ("PVRSRVInitSrvDisconnectBW....5\n");
+
 	psRetOUT->eError = PVRSRVFinaliseSystem(psInitSrvDisconnectIN->bInitSuccesful);
+
+	printk ("PVRSRVInitSrvDisconnectBW....6\n");
 
 	PVRSRVSetInitServerState( PVRSRV_INIT_SERVER_SUCCESSFUL ,
 				((psRetOUT->eError == PVRSRV_OK) && (psInitSrvDisconnectIN->bInitSuccesful))
 				? IMG_TRUE : IMG_FALSE);
 
+	printk ("PVRSRVInitSrvDisconnectBW....7\n");
 	return 0;
 }
 
@@ -4935,7 +4947,7 @@ CommonBridgeInit(IMG_VOID)
 	SetDispatchTableEntry(PVRSRV_BRIDGE_FREE_DEV_VIRTMEM, DummyBW);
 	SetDispatchTableEntry(PVRSRV_BRIDGE_MAP_EXT_MEMORY, DummyBW);
 	SetDispatchTableEntry(PVRSRV_BRIDGE_UNMAP_EXT_MEMORY, DummyBW);
-	SetDispatchTableEntry(PVRSRV_BRIDGE_MAP_DEV_MEMORY, PVRSRVMapDeviceMemoryBW);
+ 	SetDispatchTableEntry(PVRSRV_BRIDGE_MAP_DEV_MEMORY, PVRSRVMapDeviceMemoryBW);
 	SetDispatchTableEntry(PVRSRV_BRIDGE_UNMAP_DEV_MEMORY, PVRSRVUnmapDeviceMemoryBW);
 	SetDispatchTableEntry(PVRSRV_BRIDGE_MAP_DEVICECLASS_MEMORY, PVRSRVMapDeviceClassMemoryBW);
 	SetDispatchTableEntry(PVRSRV_BRIDGE_UNMAP_DEVICECLASS_MEMORY, PVRSRVUnmapDeviceClassMemoryBW);
@@ -5104,7 +5116,7 @@ IMG_INT BridgedDispatchKM(PVRSRV_PER_PROCESS_DATA * psPerProc,
 	IMG_UINT32   ui32BridgeID = psBridgePackageKM->ui32BridgeID;
 	IMG_INT      err          = -EFAULT;
 
-#if defined(DEBUG_TRACE_BRIDGE_KM)
+#if 1 //defined(DEBUG_TRACE_BRIDGE_KM)
 	PVR_DPF((PVR_DBG_ERROR, "%s: %s",
 			 __FUNCTION__,
 			 g_BridgeDispatchTable[ui32BridgeID].pszIOCName));
@@ -5115,12 +5127,16 @@ IMG_INT BridgedDispatchKM(PVRSRV_PER_PROCESS_DATA * psPerProc,
 	g_BridgeGlobalStats.ui32IOCTLCount++;
 #endif
 
+	printk ("BridgedDispatchKM...\n");
 	if(!psPerProc->bInitProcess)
 	{
+		printk ("BridgedDispatchKM...1\n");
 		if(PVRSRVGetInitServerState(PVRSRV_INIT_SERVER_RAN))
 		{
+		printk ("BridgedDispatchKM...2\n");
 			if(!PVRSRVGetInitServerState(PVRSRV_INIT_SERVER_SUCCESSFUL))
 			{
+				printk ("BridgedDispatchKM...2\n");
 				PVR_DPF((PVR_DBG_ERROR, "%s: Initialisation failed.  Driver unusable.",
 						 __FUNCTION__));
 				goto return_fault;
@@ -5128,6 +5144,7 @@ IMG_INT BridgedDispatchKM(PVRSRV_PER_PROCESS_DATA * psPerProc,
 		}
 		else
 		{
+			printk ("BridgedDispatchKM...3\n");
 			if(PVRSRVGetInitServerState(PVRSRV_INIT_SERVER_RUNNING))
 			{
 				PVR_DPF((PVR_DBG_ERROR, "%s: Initialisation is in progress",
@@ -5136,6 +5153,7 @@ IMG_INT BridgedDispatchKM(PVRSRV_PER_PROCESS_DATA * psPerProc,
 			}
 			else
 			{
+				printk ("BridgedDispatchKM...4 %d\n", ui32BridgeID);
 				
 				switch(ui32BridgeID)
 				{

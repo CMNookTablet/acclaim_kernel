@@ -878,6 +878,7 @@ PVRSRV_ERROR OSInstallMISR(IMG_VOID *pvSysData)
 	SYS_DATA *psSysData = (SYS_DATA*)pvSysData;
 	ENV_DATA *psEnvData = (ENV_DATA *)psSysData->pvEnvSpecificData;
 
+	printk ("PVR: OSInstallMISR?\n");
 	if (psEnvData->bMISRInstalled)
 	{
 		PVR_DPF((PVR_DBG_ERROR, "OSInstallMISR: An MISR has already been installed"));
