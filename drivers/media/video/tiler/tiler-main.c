@@ -1599,6 +1599,7 @@ static s32 __init tiler_init(void)
 	struct tmm *tmm_pat = NULL;
 	struct pat_area area = {0};
 
+	printk ("tiler: tiler_init\n");
 	tiler.alloc = alloc_block;
 	tiler.pin = pin_block;
 	tiler.lock = find_n_lock;
@@ -1696,6 +1697,7 @@ static s32 __init tiler_init(void)
 		printk(KERN_ERR "cdev_add():failed\n");
 #endif
 
+	printk ("tiler: class_create\n");
 	tilerdev_class = class_create(THIS_MODULE, "tiler");
 
 	if (IS_ERR(tilerdev_class)) {
@@ -1813,16 +1815,24 @@ tiler_blk_handle tiler_alloc_block_area(enum tiler_fmt fmt, u32 width,
 
 	/* if tiler is not initialized fail gracefully */
 	if (!tilerdev_class)
-		return NULL;
+		{
+			printk ("tiler_alloc_block_area doesnt have a tilerdev_class\n");
+			return NULL;
+		}
 
+	printk ("tiler_alloc_block_area1\n");
 	mi = alloc_block_area(fmt, width, height, 0, 0,
 				__get_si(0, true, SECURE_BY_PID), PAGE_SIZE, 0);
+	printk ("tiler_alloc_block_area2\n");
 
 	if (IS_ERR_OR_NULL(mi))
 		goto done;
 
+	printk ("tiler_alloc_block_area3\n");
 	fill_virt_array(&mi->blk, virt_array);
+	printk ("tiler_alloc_block_area4\n");
 	*ssptr = mi->blk.phys;
+	printk ("tiler_alloc_block_area5\n");
 
 done:
 	return mi;

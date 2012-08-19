@@ -420,7 +420,7 @@ static void dsscomp_mgr_delayed_cb(struct work_struct *work)
 	mutex_unlock(&mtx);
 }
 
-static u32 dsscomp_mgr_callback(void *data, int id, int status)
+u32 dsscomp_mgr_callback(void *data, int id, int status)
 {
 	struct dsscomp_data *comp = data;
 
@@ -441,7 +441,7 @@ static u32 dsscomp_mgr_callback(void *data, int id, int status)
 
 /* apply composition */
 /* at this point the composition is not on any queue */
-static int dsscomp_apply(dsscomp_t comp)
+int dsscomp_apply(dsscomp_t comp)
 {
 	int i, r = -EFAULT;
 	u32 dmask, display_ix;

@@ -199,6 +199,7 @@ obj-$(CONFIG_MACH_OMAP4_PANDA)		+= board-omap4panda.o \
 
 obj-$(CONFIG_MACH_OMAP4_ACCLAIM)		+= board-acclaim.o \
 					   board-acclaim-panel.o \
+					   board-44xx-identity.o \
 					   board-acclaim-peripherals.o \
 					   omap_phy_internal.o \
 					   hsmmc.o

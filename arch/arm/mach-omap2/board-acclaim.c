@@ -114,8 +114,12 @@ static inline void ramconsole_reserve_sdram(void) {}
 
 static void __init omap_4430_acclaim_init(void)
 {
-	acclaim_peripherals_init();
 	omap_dmm_init();
+#ifdef CONFIG_ION_OMAP
+	omap_ion_init();
+#endif
+	acclaim_peripherals_init();
+	omap4_create_board_props();
 }
 
 static void __init omap_4430_acclaim_map_io(void)
@@ -130,9 +134,6 @@ static void __init acclaim_reserve(void)
 	/* do the static reservations first */
 	memblock_remove(PHYS_ADDR_SMC_MEM, PHYS_ADDR_SMC_SIZE);
 
-#ifdef CONFIG_ION_OMAP
-	omap_ion_init();
-#endif
 	omap_reserve();
 }
 

@@ -516,6 +516,8 @@ static int dsscomp_probe(struct platform_device *pdev)
 		pr_err("dsscomp: failed to allocate device.\n");
 		return -ENOMEM;
 	}
+	printk ("dsscomp_probe\n");
+
 	cdev->dev.minor = MISC_DYNAMIC_MINOR;
 	cdev->dev.name = "dsscomp";
 	cdev->dev.mode = 0666;
@@ -543,6 +545,7 @@ static int dsscomp_probe(struct platform_device *pdev)
 	cdev->pdev = &pdev->dev;
 	platform_set_drvdata(pdev, cdev);
 
+	printk ("dsscomp_probe %p\n", cdev->pdev->platform_data);
 	pr_info("dsscomp: initializing.\n");
 
 	fill_cache(cdev);

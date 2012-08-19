@@ -1107,7 +1107,8 @@ static int omaplfb_probe(struct platform_device *pdev)
 	odev->dev = &pdev->dev;
 	platform_set_drvdata(pdev, odev);
 	gplatdata = (struct sgx_omaplfb_platform_data *)odev->dev->platform_data;
-
+	
+	printk ("omaplfb_probe: " DRVNAME " %p\n", odev->dev->platform_data);
 	if (!gplatdata)
 	{
 		WARN(1, "Platform data is null");
@@ -1192,6 +1193,6 @@ static void __exit OMAPLFB_Cleanup(void)
 }
 
 #if !defined(SUPPORT_DRI_DRM)
-late_initcall(OMAPLFB_Init);
+module_init(OMAPLFB_Init);
 module_exit(OMAPLFB_Cleanup);
 #endif

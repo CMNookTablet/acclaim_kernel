@@ -75,6 +75,7 @@ struct sgx_omaplfb_config *sgx_omaplfb_get(unsigned int fbix)
 
 static int __init omap_init_omaplfb(void)
 {
+	printk ("omap_init_omaplfb...\n");
 	return platform_device_register(&omaplfb_plat_device);
 }
 

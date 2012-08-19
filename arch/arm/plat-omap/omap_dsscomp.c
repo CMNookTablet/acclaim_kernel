@@ -49,6 +49,7 @@ void dsscomp_set_platform_data(struct dsscomp_platform_data *data)
 
 static int __init omap_init_dsscomp(void)
 {
+	printk ("omap_init_dsscomp\n");
 	return platform_device_register(&omap_dsscomp_device);
 }
 
