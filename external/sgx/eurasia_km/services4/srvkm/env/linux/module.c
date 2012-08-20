@@ -639,7 +639,6 @@ static int __init PVRCore_Init(void)
 		goto init_failed;
 	}
 
-	printk ("PVR: calling....LinuxBridgeInit \n");
 	LinuxBridgeInit();
 
 	PVRMMapInit();

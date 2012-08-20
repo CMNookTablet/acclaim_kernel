@@ -39,12 +39,16 @@
 
 #include <video/dsscomp.h>
 #include <plat/dsscomp.h>
+#include <plat/android-display.h>
 #include "dsscomp.h"
+#include "../dss/dss.h"
 
 #include <linux/debugfs.h>
 
 static DECLARE_WAIT_QUEUE_HEAD(waitq);
 static DEFINE_MUTEX(wait_mtx);
+
+static struct dsscomp_platform_info platform_info;
 
 static u32 hwc_virt_to_phys(u32 arg)
 {
@@ -405,6 +409,37 @@ static void fill_cache(struct dsscomp_dev *cdev)
 				cdev->num_displays, cdev->num_ovls);
 }
 
+static void fill_platform_info(struct dsscomp_dev *cdev)
+{
+	struct dsscomp_platform_info *p = &platform_info;
+	struct sgx_omaplfb_config *fb_info;
+
+	p->max_xdecim_1d = 16;
+	p->max_xdecim_2d = 16;
+	p->max_ydecim_1d = 16;
+	p->max_ydecim_2d = 2;
+
+	p->fclk = 173000000;
+	/*
+	 * :TODO: for now overwrite with actual fclock as dss will not scale
+	 * fclock based on composition
+	 */
+	p->fclk = dispc_fclk_rate();
+
+	p->min_width = 2;
+	p->max_width = 2048;
+	p->max_height = 2048;
+
+	p->max_downscale = 4;
+	p->integer_scale_ratio_limit = 2048;
+
+	p->tiler1d_slot_size = tiler1d_slot_size(cdev);
+
+	fb_info = sgx_omaplfb_get(0);
+	p->fbmem_type = fb_info->tiler2d_buffers ? DSSCOMP_FBMEM_TILER2D :
+						DSSCOMP_FBMEM_VRAM;
+}
+
 static long comp_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
 	int r = 0;
@@ -470,6 +505,12 @@ static long comp_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	{
 		r = copy_from_user(&u.sdis, ptr, sizeof(u.sdis)) ? :
 		    setup_display(cdev, &u.sdis);
+	}
+	case DSSCIOC_QUERY_PLATFORM:
+	{
+		/* :TODO: for now refill platform info as it is dynamic */
+		r = copy_to_user(ptr, &platform_info, sizeof(platform_info));
+		break;
 	}
 	default:
 		r = -EINVAL;
@@ -549,8 +590,10 @@ static int dsscomp_probe(struct platform_device *pdev)
 	pr_info("dsscomp: initializing.\n");
 
 	fill_cache(cdev);
+	fill_platform_info(cdev);
 	
 	/* initialize queues */
+
 	dsscomp_queue_init(cdev);
 	dsscomp_gralloc_init(cdev);
 

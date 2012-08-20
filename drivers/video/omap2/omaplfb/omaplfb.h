@@ -330,5 +330,7 @@ void OMAPLFBPrintInfo(OMAPLFB_DEVINFO *psDevInfo);
  * This is the number of framebuffers rendered to by GC320
  */
 #define OMAPLFB_NUM_BLT_FBS	2
-#endif /* CONFIG_GCBV */
+#else /* hack for PVR */
+#define OMAPLFB_NUM_BLT_FBS	2
+#endif
 #endif /* __OMAPLFB_H__ */

@@ -17,6 +17,7 @@
 #include <linux/clk.h>
 #include <linux/err.h>
 #include <linux/slab.h>
+#include <linux/mm.h>
 
 #include <mach/hardware.h>
 #include <mach/irqs.h>
@@ -1043,6 +1044,7 @@ static void omap_init_gpu(void)
 	pdata->device_enable = omap_device_enable;
 	pdata->device_idle = omap_device_idle;
 	pdata->device_shutdown = omap_device_shutdown;
+	pdata->access_process_vm = access_process_vm;
 
 	od = omap_device_build(name, 0, oh, pdata,
 			     sizeof(struct gpu_platform_data),

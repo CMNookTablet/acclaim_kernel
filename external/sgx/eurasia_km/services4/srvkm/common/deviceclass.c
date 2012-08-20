@@ -2051,6 +2051,58 @@ static PVRSRV_ERROR PVRSRVDCMemInfoGetBvHandle(PVRSRV_KERNEL_MEM_INFO *psKernelM
 #endif
 }
 
+/*!
+******************************************************************************
+
+ @Function	PVRSRVDCMemInfoGetCpuMultiPlanePAddr
+
+ @Description returns physical addresses of  a multi-plane buffer
+
+
+ @Input	psKernelMemInfo	- Pointer to Kernel Memory Info structure
+		puPlaneByteOffsets - requested offset inside the plane.
+			If the array is a NULL pointer, 0 requested offsets
+			are assumed for all planes;
+		pui32NumAddrOffsets	- specifying the size of the user array.
+			If the array is smaller than the number of the planes
+			for this buffer, the correct size will be set and an
+			error returned back;
+
+@Output  pPlanePAddrs - array of plane physical addresses of the returned size
+						in pui32NumAddrOffsets;
+		 pui32NumAddrOffsets - contains the real number of planes for the buffer;
+
+@Return   IMG_INT32  : size of the entire buffer or negative number on ERROR
+
+******************************************************************************/
+static IMG_INT32
+PVRSRVDCMemInfoGetCpuMultiPlanePAddr(PVRSRV_KERNEL_MEM_INFO *psKernelMemInfo,
+		IMG_SIZE_T* puPlaneByteOffsets, IMG_CPU_PHYADDR* pPlanePAddrs,
+		IMG_UINT32* pui32NumAddrOffsets)
+{
+	IMG_UINT32 aui32PlaneAddressOffsets[PVRSRV_MAX_NUMBER_OF_MM_BUFFER_PLANES];
+	IMG_INT32 i32Ret;
+	IMG_UINT32 i;
+
+	i32Ret = OSGetMemMultiPlaneInfo(psKernelMemInfo->sMemBlk.hOSMemHandle,
+			aui32PlaneAddressOffsets,
+			pui32NumAddrOffsets);
+
+	if((i32Ret < 0) || (pPlanePAddrs == IMG_NULL))
+		return i32Ret;
+
+	for (i = 0; i < *pui32NumAddrOffsets; i++)
+	{
+		IMG_SIZE_T uiReqByteOffsets = puPlaneByteOffsets ? puPlaneByteOffsets[i] : 0;
+
+		uiReqByteOffsets += aui32PlaneAddressOffsets[i];
+
+		pPlanePAddrs[i] = OSMemHandleToCpuPAddr(psKernelMemInfo->sMemBlk.hOSMemHandle, uiReqByteOffsets);
+	}
+
+	return i32Ret;
+}
+
 IMG_EXPORT
 IMG_BOOL PVRGetDisplayClassJTable(PVRSRV_DC_DISP2SRV_KMJTABLE *psJTable)
 {
@@ -2075,6 +2127,7 @@ IMG_BOOL PVRGetDisplayClassJTable(PVRSRV_DC_DISP2SRV_KMJTABLE *psJTable)
 	psJTable->pfnPVRSRVDCMemInfoGetByteSize = &PVRSRVDCMemInfoGetByteSize;
 	psJTable->pfnPVRSRVDCMemInfoIsPhysContig = &PVRSRVDCMemInfoIsPhysContig;
 	psJTable->pfnPVRSRVDCMemInfoGetBvHandle = &PVRSRVDCMemInfoGetBvHandle;
+	psJTable->pfnPVRSRVDCMemInfoGetCpuMultiPlanePAddr = PVRSRVDCMemInfoGetCpuMultiPlanePAddr;
 	return IMG_TRUE;
 }
 

@@ -165,6 +165,9 @@ static IMG_VOID SetDCState(IMG_HANDLE hDevice, IMG_UINT32 ui32State)
 		case DC_STATE_NO_FLUSH_COMMANDS:
 			OMAPLFBAtomicBoolSet(&psDevInfo->sFlushCommands, OMAPLFB_FALSE);
 			break;
+		case DC_STATE_FORCE_SWAP_TO_SYSTEM:
+			OMAPLFBFlip(psDevInfo, &psDevInfo->sSystemBuffer);
+			break;
 		default:
 			break;
 	}
@@ -726,16 +729,6 @@ static PVRSRV_ERROR SwapToDCBuffer(IMG_HANDLE hDevice,
 	
 	
 
-	return PVRSRV_OK;
-}
-
-static PVRSRV_ERROR SwapToDCSystem(IMG_HANDLE hDevice,
-                                   IMG_HANDLE hSwapChain)
-{
-	UNREFERENCED_PARAMETER(hDevice);
-	UNREFERENCED_PARAMETER(hSwapChain);
-	
-	
 	return PVRSRV_OK;
 }
 
@@ -1635,7 +1628,6 @@ static OMAPLFB_DEVINFO *OMAPLFBInitDev(unsigned uiFBDevID)
 	psDevInfo->sDCJTable.pfnSetDCSrcColourKey = SetDCSrcColourKey;
 	psDevInfo->sDCJTable.pfnGetDCBuffers = GetDCBuffers;
 	psDevInfo->sDCJTable.pfnSwapToDCBuffer = SwapToDCBuffer;
-	psDevInfo->sDCJTable.pfnSwapToDCSystem = SwapToDCSystem;
 	psDevInfo->sDCJTable.pfnSetDCState = SetDCState;
 
 	

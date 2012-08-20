@@ -119,17 +119,17 @@ static void print_bvparams(struct bvbltparams *bltparams,
 #if 0
 void OMAPLFBGetBltFBsBvHndl(OMAPLFB_FBINFO *psPVRFBInfo, IMG_UINTPTR_T *ppPhysAddr)
 {
-	if (++psPVRFBInfo->iBltFBsIdx >= 5)
+	if (++psPVRFBInfo->iBltFBsIdx >= OMAPLFB_NUM_BLT_FBS)
 	{
 		psPVRFBInfo->iBltFBsIdx = 0;
 	}
 	*ppPhysAddr = psPVRFBInfo->psBltFBsBvPhys[psPVRFBInfo->iBltFBsIdx];
 }
-
+#endif
 static OMAPLFB_ERROR InitBltFBsCommon(OMAPLFB_DEVINFO *psDevInfo)
 {
 	OMAPLFB_FBINFO *psPVRFBInfo = &psDevInfo->sFBInfo;
-	IMG_INT n = 5;
+	IMG_INT n = OMAPLFB_NUM_BLT_FBS;
 
 	psPVRFBInfo->psBltFBsNo = n;
 	psPVRFBInfo->psBltFBsIonHndl = NULL;
@@ -394,6 +394,7 @@ static void OMAPLFBSetNV12Params(struct bvsurfgeom *geom, struct bvbuffdesc *des
 	geom->virtstride = (desc->length * 2) / (geom->height * 3);
 }
 
+#if 0
 void OMAPLFBDoBlits(OMAPLFB_DEVINFO *psDevInfo, PDC_MEM_INFO *ppsMemInfos, struct omap_hwc_blit_data *blit_data, IMG_UINT32 ui32NumMemInfos)
 {
 	struct rgz_blt_entry *entry_list;
@@ -586,4 +587,4 @@ IMG_BOOL OMAPLFBInitBlt(void)
 #endif
 	return gbBvInterfacePresent;
 }
-#endif
+#endif /* 0 commented out */

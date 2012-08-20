@@ -28,6 +28,8 @@ struct gpu_platform_data {
         int (*device_enable) (struct platform_device *pdev);
 	int (*device_shutdown) (struct platform_device *pdev);
 	int (*device_idle) (struct platform_device *pdev);
+	int (*access_process_vm) (struct task_struct *tsk, unsigned long addr,
+				  void *buf, int len, int write);
 };
 
 #endif

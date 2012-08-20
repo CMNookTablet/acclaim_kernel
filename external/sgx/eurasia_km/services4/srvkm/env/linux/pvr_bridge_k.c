@@ -82,7 +82,7 @@ static IMG_UINT64 ui64Stamp;
 PVRSRV_ERROR
 LinuxBridgeInit(IMG_VOID)
 {
-#if 0
+#if defined(DEBUG_BRIDGE_KM)
 	{
 		g_ProcBridgeStats = CreateProcReadEntrySeq(
 												  "bridge_stats", 
@@ -109,7 +109,7 @@ LinuxBridgeDeInit(IMG_VOID)
 #endif
 }
 
-#if 1 //defined(DEBUG_BRIDGE_KM)
+#if defined(DEBUG_BRIDGE_KM)
 
 static void ProcSeqStartstopBridgeStats(struct seq_file *sfile,IMG_BOOL start) 
 {

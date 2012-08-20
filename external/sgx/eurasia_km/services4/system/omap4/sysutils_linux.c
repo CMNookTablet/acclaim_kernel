@@ -699,7 +699,7 @@ int pvr_access_process_vm(struct task_struct *tsk, unsigned long addr, void *buf
 {
 	struct gpu_platform_data *pdata;
 	pdata = (struct gpu_platform_data *)gpsPVRLDMDev->dev.platform_data;
-	//dif(!pdata || !pdata->access_process_vm)
-		return 0;
-//	return pdata->access_process_vm(tsk, addr, buf, len, write);
+	if(!pdata || !pdata->access_process_vm)
+		return -1;
+	return pdata->access_process_vm(tsk, addr, buf, len, write);
 }

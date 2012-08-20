@@ -304,13 +304,21 @@ IMG_INT32
 OSGetMemMultiPlaneInfo(IMG_HANDLE hOSMemHandle, IMG_UINT32* pui32AddressOffsets,
 		IMG_UINT32* ui32NumAddrOffsets)
 {
-    LinuxMemArea *psLinuxMemArea  = (LinuxMemArea *)hOSMemHandle;
+	LinuxMemArea *psLinuxMemArea  = (LinuxMemArea *)hOSMemHandle;
 
-    if(psLinuxMemArea->eAreaType != LINUX_MEM_AREA_ION)
-        return -1;
+	if(!ui32NumAddrOffsets)
+		return -1;
 
-    return GetIONLinuxMemAreaInfo(psLinuxMemArea, pui32AddressOffsets, ui32NumAddrOffsets);
+	if(psLinuxMemArea->eAreaType == LINUX_MEM_AREA_ION)
+		return GetIONLinuxMemAreaInfo(psLinuxMemArea, pui32AddressOffsets, ui32NumAddrOffsets);
 
+	if(!pui32AddressOffsets)
+		return -1;
+
+	*pui32AddressOffsets = 0;
+	*ui32NumAddrOffsets = 1;
+
+	return psLinuxMemArea->ui32ByteSize;
 }
 
 PVRSRV_ERROR
@@ -878,7 +886,6 @@ PVRSRV_ERROR OSInstallMISR(IMG_VOID *pvSysData)
 	SYS_DATA *psSysData = (SYS_DATA*)pvSysData;
 	ENV_DATA *psEnvData = (ENV_DATA *)psSysData->pvEnvSpecificData;
 
-	printk ("PVR: OSInstallMISR?\n");
 	if (psEnvData->bMISRInstalled)
 	{
 		PVR_DPF((PVR_DBG_ERROR, "OSInstallMISR: An MISR has already been installed"));
